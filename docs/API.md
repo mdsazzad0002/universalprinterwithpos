@@ -429,7 +429,7 @@ All fields are optional, but you must send `items` or `total`. For an item,
 | `qr` | `value`, `size` (1–16, default 6) |
 | `image` | `base64` (PNG/JPEG, `data:` prefix allowed), `width` (dots), `align` (default `center`) |
 | `cut` | `full` (default partial cut) |
-| `cash_drawer` | Opens the drawer connected to the printer |
+| `cash_drawer` | Opens the drawer connected to the printer. A job with only `cash_drawer` opens the drawer without feeding or cutting paper |
 | `raw` | `base64` printer bytes inserted as-is |
 
 If the printer's *Auto cut* setting is on and your document has no `cut`, a

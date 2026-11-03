@@ -6,15 +6,19 @@ import 'services/client_store.dart';
 import 'services/local_api_server.dart';
 import 'services/print_service.dart';
 import 'services/printer_store.dart';
+import 'services/support_store.dart';
+import 'services/theme_store.dart';
 
 class AppServices {
-  AppServices._(this.printers, this.clients, this.printService, this.apiServer, this.host);
+  AppServices._(this.printers, this.clients, this.printService, this.apiServer, this.host, this.theme, this.support);
 
   final PrinterStore printers;
   final ClientStore clients;
   final PrintService printService;
   final LocalApiServer apiServer;
   final AndroidHost host;
+  final ThemeStore theme;
+  final SupportStore support;
 
   static Future<AppServices> create() async {
     final db = await openAppDatabase();
@@ -25,8 +29,9 @@ class AppServices {
     printers.onDeleted = clients.onPrinterDeleted;
     final printService = PrintService(jobs: JobRepository(db), printers: printers, clients: clients);
     await printService.init();
+    final settings = SettingsRepository(db);
     final apiServer = LocalApiServer(
-      settings: SettingsRepository(db),
+      settings: settings,
       printService: printService,
       printers: printers,
       clients: clients,
@@ -34,7 +39,11 @@ class AppServices {
     await apiServer.init();
     final host = AndroidHost(printService: printService, api: apiServer);
     await host.init();
-    return AppServices._(printers, clients, printService, apiServer, host);
+    final theme = ThemeStore(settings);
+    await theme.load();
+    final support = SupportStore(settings);
+    await support.load();
+    return AppServices._(printers, clients, printService, apiServer, host, theme, support);
   }
 }
 

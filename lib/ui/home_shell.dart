@@ -52,7 +52,21 @@ class _HomeShellState extends State<HomeShell> {
           const SizedBox(height: 16),
           const Text('Check that the software shows the same code:'),
           const SizedBox(height: 8),
-          Text(p.code, style: Theme.of(ctx).textTheme.displaySmall?.copyWith(letterSpacing: 6, fontWeight: FontWeight.bold)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              p.code,
+              style: Theme.of(ctx).textTheme.displaySmall?.copyWith(
+                letterSpacing: 6,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(ctx).colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Reject')),
@@ -68,28 +82,72 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
+  static const _destinations = [
+    (Icons.space_dashboard_outlined, Icons.space_dashboard, 'Dashboard'),
+    (Icons.print_outlined, Icons.print, 'Printers'),
+    (Icons.receipt_long_outlined, Icons.receipt_long, 'Jobs'),
+    (Icons.hub_outlined, Icons.hub, 'Connect'),
+    (Icons.grid_view_outlined, Icons.grid_view_rounded, 'Menu'),
+  ];
+
+  /// Navigation destinations have no cursor setting; a region inside their
+  /// ink well (sized like the selection pill) shows the hand.
+  static Widget _pointer(Widget child) => MouseRegion(
+    cursor: SystemMouseCursors.click,
+    child: child is Icon ? SizedBox(width: 56, height: 32, child: child) : child,
+  );
+
   @override
   Widget build(BuildContext context) {
+    final body = IndexedStack(
+      index: _index,
+      children: [
+        DashboardScreen(onOpenTab: (i) => setState(() => _index = i)),
+        const PrintersScreen(),
+        const JobsScreen(),
+        const ApiScreen(),
+        const MenuScreen(),
+      ],
+    );
+    void select(int i) => setState(() => _index = i);
+
+    if (MediaQuery.sizeOf(context).width >= 840) {
+      final scheme = Theme.of(context).colorScheme;
+      return Scaffold(
+        body: Row(children: [
+          NavigationRail(
+            selectedIndex: _index,
+            onDestinationSelected: select,
+            labelType: NavigationRailLabelType.all,
+            minWidth: 88,
+            groupAlignment: -0.85,
+            leading: Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 8),
+              child: Image.asset('assets/logo.png', height: 40, filterQuality: FilterQuality.medium),
+            ),
+            destinations: [
+              for (final (icon, selected, label) in _destinations)
+                NavigationRailDestination(
+                  icon: _pointer(Icon(icon)),
+                  selectedIcon: _pointer(Icon(selected)),
+                  label: _pointer(Text(label)),
+                ),
+            ],
+          ),
+          VerticalDivider(width: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
+          Expanded(child: body),
+        ]),
+      );
+    }
+
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: [
-          DashboardScreen(onOpenTab: (i) => setState(() => _index = i)),
-          const PrintersScreen(),
-          const JobsScreen(),
-          const ApiScreen(),
-          const MenuScreen(),
-        ],
-      ),
+      body: body,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
-          NavigationDestination(icon: Icon(Icons.print_outlined), selectedIcon: Icon(Icons.print), label: 'Printers'),
-          NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Jobs'),
-          NavigationDestination(icon: Icon(Icons.hub_outlined), selectedIcon: Icon(Icons.hub), label: 'Connect'),
-          NavigationDestination(icon: Icon(Icons.menu), selectedIcon: Icon(Icons.menu_open), label: 'Menu'),
+        onDestinationSelected: select,
+        destinations: [
+          for (final (icon, selected, label) in _destinations)
+            NavigationDestination(icon: _pointer(Icon(icon)), selectedIcon: _pointer(Icon(selected)), label: label),
         ],
       ),
     );

@@ -138,6 +138,13 @@ void main() {
       expect(bytes, [0x1B, 0x40, 0x1B, 0x74, 0x00, 1, 2, 3]);
     });
 
+    test('cash drawer alone kicks the drawer without feeding or cutting', () async {
+      final bytes = await DocumentRenderer(paperWidthMm: 58, rasterizer: FakeRasterizer()).render([
+        {'type': 'cash_drawer'},
+      ]);
+      expect(bytes, [0x1B, 0x40, 0x1B, 0x74, 0x00, 0x1B, 0x70, 0x00, 0x19, 0xFA]);
+    });
+
     test('unknown element type fails', () {
       expect(
         DocumentRenderer(paperWidthMm: 58, rasterizer: FakeRasterizer()).render([{'type': 'nope'}]),

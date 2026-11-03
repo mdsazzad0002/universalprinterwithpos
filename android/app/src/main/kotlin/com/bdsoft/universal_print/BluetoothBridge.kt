@@ -164,7 +164,13 @@ class BluetoothBridge(
         if (!bt.isEnabled) throw IOException("Bluetooth is turned off")
 
         val device = bt.getRemoteDevice(address)
-        bt.cancelDiscovery()
+        // A running scan slows down connecting. Cancelling it needs
+        // BLUETOOTH_SCAN on Android 12+, which some phones enforce; this app
+        // only uses paired printers and never scans, so skip it if refused.
+        try {
+            bt.cancelDiscovery()
+        } catch (_: SecurityException) {
+        }
         val socket = try {
             device.createRfcommSocketToServiceRecord(SPP_UUID).also { connectOrClose(it) }
         } catch (e: IOException) {

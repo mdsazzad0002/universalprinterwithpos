@@ -39,6 +39,8 @@ dependencies:
   sqflite_common_ffi: ^2.4.5
   bluez: ^0.9.0
   ffi: ^2.2.0
+  barcode: ^2.2.9
+  url_launcher: ^6.3.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

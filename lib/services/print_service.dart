@@ -161,15 +161,27 @@ class PrintService extends ChangeNotifier {
     return (job: job, duplicate: false);
   }
 
-  Future<SubmitResult> testPrint(Printer printer) => submit(
-    printer.isDocument
-        ? {'printer_id': printer.id, 'document_type': 'pdf', 'data': base64.encode(_pageTest(printer))}
-        : {
-            'printer_id': printer.id,
-            'document_type': 'elements',
-            'elements': printer.isLabel ? _labelTest(printer) : _receiptTest(printer),
-          },
-    source: 'test',
+  Future<SubmitResult> testPrint(Printer printer) => submit(testPayload(printer), source: 'test');
+
+  /// What [testPrint] sends; also shown in the print preview.
+  Map<String, dynamic> testPayload(Printer printer) => printer.isDocument
+      ? {'printer_id': printer.id, 'document_type': 'pdf', 'data': base64.encode(_pageTest(printer))}
+      : {
+          'printer_id': printer.id,
+          'document_type': 'elements',
+          'elements': printer.isLabel ? _labelTest(printer) : _receiptTest(printer),
+        };
+
+  /// Kicks the cash drawer wired to a receipt printer, without printing.
+  Future<SubmitResult> openCashDrawer(Printer printer) => submit(
+    {
+      'printer_id': printer.id,
+      'document_type': 'elements',
+      'elements': [
+        {'type': 'cash_drawer'},
+      ],
+    },
+    source: 'drawer',
   );
 
   static Uint8List _pageTest(Printer printer) => testPagePdf([

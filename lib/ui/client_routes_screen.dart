@@ -129,6 +129,7 @@ class _RouteCard extends StatelessWidget {
     final widths = {58, 80, ?printer?.paperWidth, ?route.paperWidth}.toList()..sort();
 
     return Card(
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 8, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

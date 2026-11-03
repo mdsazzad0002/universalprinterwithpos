@@ -81,7 +81,7 @@ class _ApiProfilesScreenState extends State<ApiProfilesScreen> {
                   ]),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               if (profiles.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(24),
@@ -102,6 +102,7 @@ class _ApiProfilesScreenState extends State<ApiProfilesScreen> {
   Widget _profileCard(BuildContext context, ApiClient p) {
     final routes = AppScope.of(context).clients.routesFor(p.id).length;
     return Card(
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

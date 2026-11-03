@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../app_services.dart';
 import '../data/models/print_job.dart';
+import 'print_preview.dart';
+import 'theme.dart';
 import 'widgets.dart';
 
 class JobsScreen extends StatelessWidget {
@@ -30,29 +32,56 @@ class JobsScreen extends StatelessWidget {
         listenable: service,
         builder: (context, _) {
           final jobs = service.recentJobs;
-          if (jobs.isEmpty) return const Center(child: Text('No print jobs yet'));
-          return ListView.separated(
-            itemCount: jobs.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final job = jobs[i];
-              return ListTile(
-                title: Text('${job.documentType} → ${job.printerName}'),
-                subtitle: Text(
-                  [
-                    formatTime(job.createdAt),
-                    job.source,
-                    if (job.route != null) 'route: ${job.route}',
-                    if (job.copies > 1) '${job.copies} copies',
-                    if (job.error != null) job.error!,
-                  ].join(' · '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: JobStatusChip(job.status),
-                onTap: () => _showDetails(context, job),
-              );
-            },
+          if (jobs.isEmpty) {
+            return const EmptyState(
+              icon: Icons.receipt_long_outlined,
+              title: 'No print jobs yet',
+              message: 'Every job sent to a printer is listed here with its status.',
+            );
+          }
+          final scheme = Theme.of(context).colorScheme;
+          return PageListView(
+            children: [
+              Card(
+                child: Column(children: [
+                  for (final (i, job) in jobs.indexed) ...[
+                    if (i > 0) const Divider(indent: 16, endIndent: 16),
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      leading: IconBadge(
+                        switch (job.status) {
+                          JobStatus.completed => Icons.check_rounded,
+                          JobStatus.failed => Icons.priority_high_rounded,
+                          JobStatus.cancelled => Icons.block_rounded,
+                          _ => Icons.hourglass_top_rounded,
+                        },
+                        size: 38,
+                        color: switch (job.status) {
+                          JobStatus.completed => successColor,
+                          JobStatus.failed => scheme.error,
+                          JobStatus.cancelled => scheme.outline,
+                          _ => warningColor,
+                        },
+                      ),
+                      title: Text('${job.documentType} → ${job.printerName}', overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        [
+                          formatTime(job.createdAt),
+                          job.source,
+                          if (job.route != null) 'route: ${job.route}',
+                          if (job.copies > 1) '${job.copies} copies',
+                          if (job.error != null) job.error!,
+                        ].join(' · '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: JobStatusChip(job.status),
+                      onTap: () => _showDetails(context, job),
+                    ),
+                  ],
+                ]),
+              ),
+            ],
           );
         },
       ),
@@ -86,24 +115,41 @@ class JobsScreen extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             JobStatusChip(job.status),
             const SizedBox(height: 8),
-            Text('Printer: ${job.printerName}'),
-            Text('Source: ${job.source}'),
-            Text('Attempts: ${job.attempts}'),
-            if (job.reference != null) Text('Reference: ${job.reference}'),
+            const SizedBox(height: 4),
+            _detail(ctx, 'Printer', job.printerName),
+            _detail(ctx, 'Source', job.source),
+            _detail(ctx, 'Attempts', '${job.attempts}'),
+            if (job.reference != null) _detail(ctx, 'Reference', job.reference!),
             if (job.error != null) ...[
               const SizedBox(height: 8),
               Text(job.error!, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
             ],
-            const SizedBox(height: 8),
-            Text(
-              const JsonEncoder.withIndent('  ').convert(job.payload),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-              maxLines: 40,
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                const JsonEncoder.withIndent('  ').convert(job.payload),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                maxLines: 40,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ]),
         ),
         actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _preview(context, job);
+            },
+            icon: const Icon(Icons.preview_outlined, size: 18),
+            label: const Text('Preview'),
+          ),
           if (job.status == JobStatus.pending)
             TextButton(
               onPressed: () {
@@ -124,6 +170,40 @@ class JobsScreen extends StatelessWidget {
           FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
         ],
       ),
+    );
+  }
+
+  void _preview(BuildContext context, PrintJob job) {
+    final s = AppScope.of(context);
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => PrintPreviewScreen(
+        payload: job.payload,
+        printer: s.printers.byId(job.printerId),
+        printerName: job.printerName,
+        paperWidth: job.paperWidth,
+        copies: job.copies,
+        printLabel: 'Print again',
+        onPrint: job.status.isActive
+            ? null
+            : (ctx, _) async {
+                await s.printService.retry(job.id);
+                if (ctx.mounted) await watchJob(ctx, job.id);
+              },
+      ),
+    ));
+  }
+
+  Widget _detail(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 84,
+          child: Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ),
+        Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
+      ]),
     );
   }
 }

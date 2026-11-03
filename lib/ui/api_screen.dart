@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../app_services.dart';
 import '../data/models/client.dart';
 import 'client_routes_screen.dart';
+import 'theme.dart';
 import 'widgets.dart';
 
 class ApiScreen extends StatelessWidget {
@@ -28,82 +29,138 @@ $auth  -H "Content-Type: application/json" \\
        "items":[{"name":"Product A","qty":2,"price":100}],
        "total":200}}\'''';
           final clientIds = s.clients.clientIdsWithRoutes;
-          return ListView(
-            padding: const EdgeInsets.all(16),
+          final scheme = Theme.of(context).colorScheme;
+          return PageListView(
             children: [
-              Text('Connected software', style: Theme.of(context).textTheme.titleMedium),
-              if (clientIds.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('None yet. Software connects itself with POST /api/pair; you approve it here once.'),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(children: [
+                    IconBadge(
+                      api.isRunning ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                      size: 48,
+                      color: api.isRunning ? successColor : scheme.error,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(
+                          api.isRunning ? 'Print API running' : 'Print API stopped',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          api.lastError ?? base,
+                          style: TextStyle(
+                            fontFamily: api.lastError == null ? 'monospace' : null,
+                            fontSize: 13,
+                            color: api.lastError == null ? scheme.onSurfaceVariant : scheme.error,
+                          ),
+                        ),
+                      ]),
+                    ),
+                    Switch(value: api.enabled, onChanged: (v) => api.configure(enabled: v)),
+                  ]),
                 ),
-              for (final id in clientIds) _clientTile(context, id),
-              const Divider(height: 32),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Enable print API'),
-                subtitle: Text(api.lastError ?? (api.isRunning ? 'Running on $base' : 'Stopped')),
-                value: api.enabled,
-                onChanged: (v) => api.configure(enabled: v),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Require API token on this device'),
-                subtitle: const Text(
-                  'Off: software on this device prints without any key. '
-                  'Other devices on Wi-Fi always need a token.',
+              const SizedBox(height: 20),
+              SettingsGroup(
+                title: 'Connected software',
+                children: [
+                  if (clientIds.isEmpty)
+                    const ListTile(
+                      leading: IconBadge(Icons.link_off_rounded, size: 38),
+                      title: Text('None yet'),
+                      subtitle: Text('Software connects itself with POST /api/pair; you approve it here once.'),
+                    ),
+                  for (final id in clientIds) _clientTile(context, id),
+                ],
+              ),
+              SettingsGroup(
+                title: 'Access',
+                children: [
+                  SwitchListTile(
+                    secondary: const IconBadge(Icons.lock_outline_rounded, size: 38),
+                    title: const Text('Require API token on this device'),
+                    subtitle: const Text(
+                      'Off: software on this device prints without any key. '
+                      'Other devices on Wi-Fi always need a token.',
+                    ),
+                    value: api.requireToken,
+                    onChanged: (v) => api.configure(requireToken: v),
+                  ),
+                  SwitchListTile(
+                    secondary: const IconBadge(Icons.wifi_rounded, size: 38),
+                    title: const Text('Allow other devices on Wi-Fi'),
+                    subtitle: const Text('Off: only apps and browsers on this phone can print'),
+                    value: api.allowLan,
+                    onChanged: (v) => api.configure(allowLan: v),
+                  ),
+                  ListTile(
+                    leading: const IconBadge(Icons.settings_ethernet_rounded, size: 38),
+                    title: const Text('Port'),
+                    subtitle: Text('${api.port}'),
+                    trailing: const Icon(Icons.edit_outlined),
+                    onTap: () => _editPort(context),
+                  ),
+                ],
+              ),
+              SettingsGroup(
+                title: 'Master token (manual setup)',
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+                    child: Row(children: [
+                      const IconBadge(Icons.key_rounded, size: 38),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: SelectableText(api.token, style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+                      ),
+                      IconButton(
+                        tooltip: 'Copy',
+                        icon: const Icon(Icons.copy_rounded),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: api.token));
+                          showMessage(context, 'Token copied');
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Generate new token',
+                        icon: const Icon(Icons.refresh_rounded),
+                        onPressed: () => _regenerate(context),
+                      ),
+                    ]),
+                  ),
+                ],
+              ),
+              SectionHeader(
+                'Example',
+                trailing: IconButton(
+                  tooltip: 'Copy',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: example));
+                    showMessage(context, 'Example copied');
+                  },
                 ),
-                value: api.requireToken,
-                onChanged: (v) => api.configure(requireToken: v),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Allow other devices on Wi-Fi'),
-                subtitle: const Text('Off: only apps and browsers on this phone can print'),
-                value: api.allowLan,
-                onChanged: (v) => api.configure(allowLan: v),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Port'),
-                subtitle: Text('${api.port}'),
-                trailing: const Icon(Icons.edit),
-                onTap: () => _editPort(context),
-              ),
-              const Divider(),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Master token (manual setup)'),
-                subtitle: SelectableText(api.token, style: const TextStyle(fontFamily: 'monospace')),
-                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                  IconButton(
-                    tooltip: 'Copy',
-                    icon: const Icon(Icons.copy),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: api.token));
-                      showMessage(context, 'Token copied');
-                    },
-                  ),
-                  IconButton(
-                    tooltip: 'Generate new token',
-                    icon: const Icon(Icons.refresh),
-                    onPressed: () => _regenerate(context),
-                  ),
-                ]),
-              ),
-              const SizedBox(height: 16),
-              Text('Example', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: SelectableText(example, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                child: SelectableText(
+                  example,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Color(0xFFE2E8F0), height: 1.5),
+                ),
               ),
-              const SizedBox(height: 8),
-              const Text('Full API reference: docs/API.md'),
+              const SizedBox(height: 12),
+              Text(
+                'Full API reference: docs/API.md',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
             ],
           );
         },
@@ -117,8 +174,7 @@ $auth  -H "Content-Type: application/json" \\
     final routes = clients.routesFor(clientId);
     final unassigned = routes.where((r) => r.printerId == null).length;
     return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(clientId == ApiClient.manualId ? Icons.key : Icons.point_of_sale),
+      leading: IconBadge(clientId == ApiClient.manualId ? Icons.key_rounded : Icons.point_of_sale_rounded, size: 38),
       title: Text(client?.name ?? (clientId == ApiClient.manualId ? 'Manual (master token)' : clientId)),
       subtitle: Text(
         '${routes.length} route(s)${unassigned > 0 ? ' · $unassigned not assigned' : ''}',

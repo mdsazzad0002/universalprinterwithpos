@@ -98,6 +98,7 @@ class Printer {
     String? address,
     int? port,
     int? paperWidth,
+    int? dpi,
     bool? autoCut,
     bool? isDefault,
   }) => Printer(
@@ -108,7 +109,7 @@ class Printer {
     port: port ?? this.port,
     paperWidth: paperWidth ?? this.paperWidth,
     protocol: protocol,
-    dpi: dpi,
+    dpi: dpi ?? this.dpi,
     labelHeight: labelHeight,
     labelGap: labelGap,
     autoCut: autoCut ?? this.autoCut,

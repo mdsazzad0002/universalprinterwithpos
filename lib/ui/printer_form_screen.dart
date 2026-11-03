@@ -233,6 +233,11 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
                 selected: {_dpi == 300 ? 300 : 203},
                 onSelectionChanged: (s) => setState(() => _dpi = s.first),
               ),
+              const SizedBox(height: 6),
+              Text(
+                'Most label printers are 203 dpi. If the print comes out too big or cut off on one side, choose 203.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
               const SizedBox(height: 16),
               Row(children: [
                 Expanded(child: _mmField(_labelWidth, 'Label width', required: true)),

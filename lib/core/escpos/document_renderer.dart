@@ -235,9 +235,10 @@ class DocumentRenderer {
       }
     }
 
-    // Raw jobs carry their own cut/feed; never append to them.
-    final isRawOnly = elements.isNotEmpty && elements.every((e) => e['type'] == 'raw');
-    if (autoCut && !cut && !isRawOnly) {
+    // Raw jobs carry their own cut/feed, and a drawer kick alone prints
+    // nothing; never append to them.
+    final noPaper = elements.isNotEmpty && elements.every((e) => e['type'] == 'raw' || e['type'] == 'cash_drawer');
+    if (autoCut && !cut && !noPaper) {
       b
         ..feed(3)
         ..cut();
