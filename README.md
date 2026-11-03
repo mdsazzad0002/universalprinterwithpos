@@ -47,7 +47,47 @@ flutter run            # on a real Android phone (Bluetooth needs real hardware)
 
 1. Pair the printer in Android Bluetooth settings (or note its IP for Wi-Fi).
 2. Printers → Add printer → choose device / enter IP → Test print.
-3. API tab → copy the token.
+3. Connect software: it pairs itself with `POST /api/pair` (approve it in the
+   app), or copy the master token from the **Connect** tab.
+
+## Build
+
+Requirements: Flutter 3.47+ (Dart 3.13+), Android SDK, Java 17.
+
+```bash
+flutter clean && flutter pub get    # fresh build
+
+flutter analyze                     # static checks
+flutter test                        # unit + API flow tests
+
+# Debug APK (for testing)
+flutter build apk --debug
+# → build/app/outputs/flutter-apk/app-debug.apk
+
+# Release APK, one per CPU architecture (smaller files)
+flutter build apk --release --split-per-abi
+# → build/app/outputs/flutter-apk/app-arm64-v8a-release.apk   (most phones)
+#   build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk (old 32-bit phones)
+
+# Release APK, single universal file (all architectures)
+flutter build apk --release
+
+# Play Store bundle
+flutter build appbundle --release
+# → build/app/outputs/bundle/release/app-release.aab
+```
+
+Install on a connected phone (USB debugging on):
+
+```bash
+adb devices                                                        # phone must be listed
+adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+```
+
+> **Signing:** release builds are currently signed with the debug key (see
+> `android/app/build.gradle.kts`). That is fine for in-house installs, but the
+> Play Store needs your own keystore. Set it up before publishing; see
+> https://docs.flutter.dev/deployment/android#sign-the-app.
 
 ## Integration API
 
