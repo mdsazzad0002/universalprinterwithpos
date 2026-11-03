@@ -47,7 +47,7 @@ void main() {
       {'type': 'cut'},
     ]);
     final text = latin1.decode(bytes);
-    expect(text, startsWith('SIZE 50 mm,30 mm\r\nGAP 2 mm,0 mm\r\nDIRECTION 1,0\r\nREFERENCE 0,0\r\nCLS\r\n'));
+    expect(text, startsWith('SIZE 50 mm,30 mm\r\nGAP 2 mm,0 mm\r\nDIRECTION 1,0\r\nREFERENCE 0,0\r\nSET TEAR ON\r\nCLS\r\n'));
     expect(text, contains('BITMAP 12,12,2,2,0,'));
     expect(text, contains(r'"128"'));
     expect(text, contains(r'"A\["]1"'), reason: 'quotes are escaped');

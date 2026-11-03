@@ -30,9 +30,12 @@ import java.util.concurrent.Executors
  */
 @SuppressLint("MissingPermission") // checked in hasPermission()
 class BluetoothBridge(
-    private val activity: Activity,
+    private val context: Context,
     messenger: BinaryMessenger,
 ) : MethodChannel.MethodCallHandler {
+
+    /** Set while the UI is open; needed only to ask for the permission. */
+    var activity: Activity? = null
 
     companion object {
         const val CHANNEL = "com.bdsoft.universal_print/bluetooth"
@@ -52,7 +55,7 @@ class BluetoothBridge(
     private var pendingPermission: MethodChannel.Result? = null
 
     private val adapter: BluetoothAdapter?
-        get() = (activity.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+        get() = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
@@ -76,7 +79,9 @@ class BluetoothBridge(
                 }
             }
             "openSettings" -> {
-                activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                activity?.startActivity(intent)
+                    ?: context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 result.success(null)
             }
             else -> result.notImplemented()
@@ -99,7 +104,7 @@ class BluetoothBridge(
 
     private fun hasPermission(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
+            context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
             PackageManager.PERMISSION_GRANTED
 
     private fun requestPermission(result: MethodChannel.Result) {
@@ -107,9 +112,14 @@ class BluetoothBridge(
             result.success(true)
             return
         }
+        val ui = activity
+        if (ui == null) {
+            result.success(false)
+            return
+        }
         pendingPermission?.success(false)
         pendingPermission = result
-        activity.requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), PERMISSION_REQUEST)
+        ui.requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), PERMISSION_REQUEST)
     }
 
     private fun bondedDevices(result: MethodChannel.Result) {

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../../data/models/printer.dart';
 import 'bluetooth_bridge.dart';
+import 'ipp_connection.dart';
 import 'usb_printers.dart';
 
 /// Sends finished printer bytes to a device.
@@ -11,6 +12,7 @@ abstract class PrinterConnection {
   Future<void> send(Uint8List data);
 
   factory PrinterConnection.forPrinter(Printer printer) => switch (printer.connectionType) {
+    _ when printer.isDocument => IppConnection(IppConnection.uriFor(printer.address, port: printer.port)),
     ConnectionType.bluetooth => BluetoothConnection(printer.address, channel: printer.port),
     ConnectionType.network => NetworkConnection(printer.address, printer.port ?? 9100),
     ConnectionType.usb => UsbConnection(printer.address),

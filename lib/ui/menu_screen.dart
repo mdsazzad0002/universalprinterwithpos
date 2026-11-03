@@ -1,13 +1,37 @@
 import 'package:flutter/material.dart';
 
 import '../app_services.dart';
+import '../services/android_host.dart';
 import '../services/local_api_server.dart';
 import 'api_profiles_screen.dart';
 import 'api_screen.dart';
 
 /// Entry point for settings and tools. Add new features as [_MenuItem]s.
-class MenuScreen extends StatelessWidget {
+class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
+
+  @override
+  State<MenuScreen> createState() => _MenuScreenState();
+}
+
+class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// The battery setting is changed in a system dialog.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) AppScope.of(context).host.refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +39,7 @@ class MenuScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Menu')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([s.clients, s.apiServer]),
+        listenable: Listenable.merge([s.clients, s.apiServer, s.host]),
         builder: (context, _) {
           final profiles = s.clients.clients.length;
           return ListView(
@@ -36,6 +60,29 @@ class MenuScreen extends StatelessWidget {
                 subtitle: 'API on/off, port, master token, routes',
                 builder: (_) => const ApiScreen(),
               ),
+              if (AndroidHost.isSupported) ...[
+                const Divider(),
+                const _Section('Background'),
+                SwitchListTile(
+                  secondary: const Icon(Icons.play_circle_outline),
+                  title: const Text('Run in background'),
+                  subtitle: const Text('Keep the print API and queue running when the app is closed, and after a restart'),
+                  value: s.host.backgroundEnabled,
+                  onChanged: s.host.setBackground,
+                ),
+                if (s.host.backgroundEnabled)
+                  ListTile(
+                    leading: Icon(
+                      s.host.batteryUnrestricted ? Icons.battery_charging_full : Icons.battery_alert,
+                      color: s.host.batteryUnrestricted ? null : Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Battery optimization'),
+                    subtitle: Text(s.host.batteryUnrestricted
+                        ? 'Unrestricted: the API answers with the screen off'
+                        : 'Restricted: Android may stop the API when the screen is off. Tap to allow.'),
+                    onTap: s.host.batteryUnrestricted ? null : s.host.requestBatteryUnrestricted,
+                  ),
+              ],
               const Divider(),
               const _Section('About'),
               const ListTile(

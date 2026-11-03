@@ -1,10 +1,10 @@
 # Universal Print – Integration API
 
-**Version 1.3** · Base URL `http://127.0.0.1:8765`
+**Version 1.4** · Base URL `http://127.0.0.1:8765`
 
-Universal Print is an Android and Linux app that prints directly (no preview)
-to thermal receipt printers (ESC/POS) and label printers (TSPL) over
-Bluetooth, Wi-Fi/LAN or USB. Your software (POS, ERP,
+Universal Print is an Android, Linux and Windows app that prints directly (no
+preview) to thermal receipt printers (ESC/POS), label printers (TSPL, ZPL) and
+A4 office printers (PDF over IPP) over Bluetooth, Wi-Fi/LAN or USB. Your software (POS, ERP,
 web app) sends JSON; the app turns it into printer commands.
 
 - [How it works](#how-it-works)
@@ -20,6 +20,7 @@ web app) sends JSON; the app turns it into printer commands.
 - [Errors](#errors)
 - [Endpoint reference](#endpoint-reference)
 - [Code examples](#code-examples)
+- [Android Intent (no HTTP)](#android-intent-no-http)
 
 ---
 
@@ -243,7 +244,7 @@ yourself, for example padding columns to `chars_per_line`.
       "id": "PRN-m9x2k1-a7f3c2",
       "name": "Cashier",
       "connection_type": "bluetooth",      // bluetooth | network | usb
-      "protocol": "escpos",                // escpos (receipt) | tspl (label)
+      "protocol": "escpos",                // escpos (receipt) | tspl, zpl (label) | ipp (A4, PDF only)
       "is_default": true,
       "auto_cut": true,
       "paper_width": 80,
@@ -273,12 +274,16 @@ yourself, for example padding columns to `chars_per_line`.
 For images, send them at most `dots_per_line` pixels wide. Wider images are
 scaled down automatically.
 
-**Label printers** (`"protocol": "tspl"`, `paper.type: "label"`) print the full
+**Label printers** (`"protocol": "tspl"` or `"zpl"`, `paper.type: "label"`) print the full
 label width at their own dpi. For example, a 50 × 30 mm label at 300 dpi has
 `dots_per_line: 584` and `height_mm: 30`. The same documents work on both
 printer types. On labels, text is scaled to the same physical size, and `cut`
 and `cash_drawer` are ignored. Keep label content short enough to fit the
 label height, because anything below it is cut off.
+
+**A4 printers** (`"protocol": "ipp"`, `"features": ["pdf"]`) accept only
+`document_type: "pdf"`. Sending a receipt to them, or a PDF to a thermal
+printer, is rejected with `422`, so check `protocol` when you pick a route.
 
 ---
 
@@ -443,7 +448,18 @@ cut is added at the end.
 ```
 
 The bytes are sent unchanged, with no auto cut. Use this if you already
-generate ESC/POS yourself.
+generate ESC/POS yourself (or TSPL / ZPL for label printers).
+
+### `pdf`: A4 documents
+
+```json
+{ "document_type": "pdf", "route": "a4-invoice", "copies": 2, "data": "JVBERi0xLjQK…" }
+```
+
+`data` is the base64 PDF (max 10 MB request). Only for A4 / PDF printers
+(`"protocol": "ipp"`): network office printers with IPP (most printers made
+after ~2012, AirPrint / IPP Everywhere) and CUPS queues on Linux. The PDF is
+printed as-is. Each copy is sent as its own job.
 
 ---
 
@@ -653,4 +669,61 @@ val json = conn.inputStream.bufferedReader().readText()
 ```
 
 On Android 9 and newer, allow cleartext traffic to `127.0.0.1` in your app's
-network security config.
+network security config. Or skip HTTP and use an Intent, see below.
+
+---
+
+## Android Intent (no HTTP)
+
+Android apps on the same phone can print through an Intent: no HTTP, no
+network security config, and no token (unless *Require API token on this
+device* is on, then add the `token` extra). The app does not open; it queues
+the job and returns at once.
+
+```kotlin
+val print = Intent("com.bdsoft.universal_print.action.PRINT")
+    .setPackage("com.bdsoft.universal_print")
+    .putExtra("payload", """{"route":"invoice","reference":"INV-1001",
+        "document_type":"receipt","content":{"items":[{"name":"Tea","qty":2,"price":20}],"total":40}}""")
+
+// Result: job_id / status on success, error otherwise.
+val launcher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+    if (r.resultCode == Activity.RESULT_OK) {
+        val jobId = r.data?.getStringExtra("job_id")
+    } else {
+        val error = r.data?.getStringExtra("error")
+    }
+}
+launcher.launch(print)
+```
+
+| Extra | Type | Description |
+|---|---|---|
+| `payload` | String | The JSON body of `POST /api/print` |
+| `text` | String | Shortcut for `{"document_type":"text","content":…}` when there is no `payload` |
+| `printer_id`, `route`, `reference` | String | Override / add to the payload |
+| `copies` | Int | Override / add to the payload |
+| `token` | String | Only when the user turned on *Require API token on this device* |
+
+Result extras are the same fields as the HTTP response (`success`, `job_id`,
+`status`, `printer_id`, `printer_name`, `duplicate`, …, or `error` and
+`code`). Follow the job with `GET /api/jobs/{job_id}` if you need the final
+status.
+
+Users can also **share** to Universal Print from any app: text, an image
+(printed full width), or a PDF (needs an A4 / PDF default printer).
+
+On Android 11+ add this to your manifest so your app can see Universal Print:
+
+```xml
+<queries>
+    <package android:name="com.bdsoft.universal_print"/>
+</queries>
+```
+
+### Background
+
+With **Menu → Run in background** on, the print API keeps answering while the
+app is closed and after a reboot (a notification shows it is running). Allow
+*Battery optimization → Unrestricted* too, or Android may pause the network
+when the screen is off.

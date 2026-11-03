@@ -23,11 +23,12 @@ class UsbDevice {
   /// IEEE 1284 device ID, e.g. `MFG:Label;CMD:TSPL;MDL:TD-401H(300dpi);`.
   final String? deviceId;
 
-  /// Command set from the device ID, `tspl` / `escpos` / null when unknown.
+  /// Command set from the device ID, `tspl` / `zpl` / `escpos` / null when unknown.
   String? get protocolHint {
     final cmd = RegExp(r'(?:CMD|COMMAND SET):([^;]*)', caseSensitive: false)
         .firstMatch(deviceId ?? '')?.group(1)?.toUpperCase() ?? '';
     if (cmd.contains('TSPL') || cmd.contains('TSC')) return 'tspl';
+    if (cmd.contains('ZPL')) return 'zpl';
     if (cmd.contains('ESC')) return 'escpos';
     return null;
   }

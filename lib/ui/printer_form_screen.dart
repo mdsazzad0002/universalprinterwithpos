@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../app_services.dart';
 import '../core/connection/bluetooth_bridge.dart';
+import '../core/connection/ipp_connection.dart';
 import '../core/connection/printer_connection.dart';
 import '../core/connection/usb_printers.dart';
 import '../data/database.dart';
@@ -77,6 +78,10 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
               onSelectionChanged: (s) => setState(() {
                 _type = s.first;
                 _address.clear();
+                // A4 printers are reached over the network only.
+                if (_type != ConnectionType.network && _protocol == PrinterProtocol.ipp) {
+                  _protocol = PrinterProtocol.escpos;
+                }
               }),
             ),
             const SizedBox(height: 16),
@@ -116,22 +121,36 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
               TextFormField(
                 controller: _address,
                 keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'IP address / host',
+                decoration: InputDecoration(
+                  labelText: _protocol == PrinterProtocol.ipp ? 'IP address or IPP URL' : 'IP address / host',
                   hintText: '192.168.1.100',
-                  border: OutlineInputBorder(),
+                  helperText: _protocol == PrinterProtocol.ipp
+                      ? 'CUPS queue: ipp://localhost:631/printers/<name>'
+                      : null,
+                  border: const OutlineInputBorder(),
                 ),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter the printer IP' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Enter the printer IP';
+                  if (_protocol != PrinterProtocol.ipp) return null;
+                  try {
+                    IppConnection.uriFor(v);
+                    return null;
+                  } on FormatException catch (e) {
+                    return e.message;
+                  }
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _port,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Port',
-                  helperText: 'Most POS printers use 9100',
-                  border: OutlineInputBorder(),
+                  helperText: _protocol == PrinterProtocol.ipp
+                      ? 'IPP uses 631 (ignored when the URL has a port)'
+                      : 'Most POS printers use 9100',
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (v) {
                   final port = int.tryParse(v ?? '');
@@ -152,20 +171,40 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
             const SizedBox(height: 16),
             Text('Printer type', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 8),
-            SegmentedButton<PrinterProtocol>(
-              segments: [
+            DropdownButtonFormField<PrinterProtocol>(
+              initialValue: _protocol,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              items: [
                 for (final p in PrinterProtocol.values)
-                  ButtonSegment(
+                  DropdownMenuItem(
                     value: p,
-                    label: Text(p.label),
-                    icon: Icon(p == PrinterProtocol.tspl ? Icons.label_outline : Icons.receipt_long),
+                    child: Row(children: [
+                      Icon(switch (p) {
+                        PrinterProtocol.escpos => Icons.receipt_long,
+                        PrinterProtocol.ipp => Icons.description_outlined,
+                        _ => Icons.label_outline,
+                      }),
+                      const SizedBox(width: 12),
+                      Text(p.label),
+                    ]),
                   ),
               ],
-              selected: {_protocol},
-              onSelectionChanged: (s) => setState(() => _protocol = s.first),
+              onChanged: (p) => setState(() {
+                final wasIpp = _protocol == PrinterProtocol.ipp;
+                _protocol = p ?? _protocol;
+                if (_protocol == PrinterProtocol.ipp) {
+                  if (_type != ConnectionType.network) _address.clear();
+                  _type = ConnectionType.network;
+                  _port.text = '631';
+                } else if (wasIpp) {
+                  _port.text = '9100';
+                }
+              }),
             ),
             const SizedBox(height: 16),
-            if (_protocol == PrinterProtocol.escpos) ...[
+            if (_protocol == PrinterProtocol.ipp)
+              const Text('Prints PDF documents (document_type "pdf") on A4 office printers and CUPS queues.')
+            else if (_protocol == PrinterProtocol.escpos) ...[
               Text('Paper width', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 8),
               SegmentedButton<int>(
@@ -278,13 +317,14 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
   void _applyHints(UsbDevice d) {
     final protocol = switch (d.protocolHint) {
       'tspl' => PrinterProtocol.tspl,
+      'zpl' => PrinterProtocol.zpl,
       'escpos' => PrinterProtocol.escpos,
       _ => null,
     };
     if (protocol != null) _protocol = protocol;
     if (d.dpiHint != null) _dpi = d.dpiHint!;
     if (protocol != null || d.dpiHint != null) {
-      showMessage(context, 'Detected: ${_protocol.label}${_protocol == PrinterProtocol.tspl ? ', $_dpi dpi' : ''}');
+      showMessage(context, 'Detected: ${_protocol.label}${_protocol != PrinterProtocol.escpos ? ', $_dpi dpi' : ''}');
     }
   }
 
@@ -336,7 +376,8 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     final network = _type == ConnectionType.network;
-    final label = _protocol == PrinterProtocol.tspl;
+    final label = _protocol == PrinterProtocol.tspl || _protocol == PrinterProtocol.zpl;
+    final ipp = _protocol == PrinterProtocol.ipp;
     final base = widget.printer;
     final printer = Printer(
       id: base?.id ?? newId('PRN'),
@@ -344,7 +385,7 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
       connectionType: _type,
       address: _address.text.trim(),
       port: network ? int.parse(_port.text) : null,
-      paperWidth: label ? int.parse(_labelWidth.text.trim()) : _paperWidth,
+      paperWidth: ipp ? 210 : (label ? int.parse(_labelWidth.text.trim()) : _paperWidth),
       autoCut: _autoCut,
       protocol: _protocol,
       dpi: label ? _dpi : 203,

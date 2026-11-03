@@ -51,10 +51,11 @@ class LocalApiServer extends ChangeNotifier {
   static const defaultPort = 8765;
   static const maxBodyBytes = 10 * 1024 * 1024;
   static const maxBatchJobs = 20;
-  static const version = '1.3.0';
+  static const version = '1.4.0';
   static const pairingTimeout = Duration(minutes: 3);
   static const _features = ['text', 'bangla', 'image', 'barcode', 'qr', 'cut', 'cash_drawer', 'raw'];
   static const _labelFeatures = ['text', 'bangla', 'image', 'barcode', 'qr', 'raw'];
+  static const _documentFeatures = ['pdf'];
 
   HttpServer? _server;
   bool enabled = true;
@@ -338,7 +339,11 @@ class LocalApiServer extends ChangeNotifier {
     ...p.toApiJson(),
     'paper': p.geometry().toJson(),
     'auto_cut': p.autoCut,
-    'features': p.isLabel ? _labelFeatures : _features,
+    'features': p.isDocument
+        ? _documentFeatures
+        : p.isLabel
+        ? _labelFeatures
+        : _features,
   };
 
   /// Returns the client id for a valid token. Without a token, local
@@ -349,8 +354,13 @@ class LocalApiServer extends ChangeNotifier {
     final given = auth != null && auth.startsWith('Bearer ')
         ? auth.substring(7).trim()
         : req.headers.value('x-api-key');
+    return resolveClient(given, local: req.connectionInfo?.remoteAddress.isLoopback ?? false);
+  }
+
+  /// Same rules for every way in (HTTP, Android Intent): [local] callers may
+  /// skip the token unless [requireToken] is on.
+  String? resolveClient(String? given, {required bool local}) {
     if (given == null || given.isEmpty) {
-      final local = req.connectionInfo?.remoteAddress.isLoopback ?? false;
       return !requireToken && local ? ApiClient.manualId : null;
     }
     if (_constantTimeEquals(given, token)) return ApiClient.manualId;

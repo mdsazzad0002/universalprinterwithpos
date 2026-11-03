@@ -1,6 +1,5 @@
 package com.bdsoft.universal_print
 
-import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -29,7 +28,7 @@ import java.util.concurrent.Executors
  * background thread, in order, with the opened connection cached.
  */
 class UsbBridge(
-    private val activity: Activity,
+    private val context: Context,
     messenger: BinaryMessenger,
 ) : MethodChannel.MethodCallHandler {
 
@@ -48,7 +47,7 @@ class UsbBridge(
     )
 
     private val channel = MethodChannel(messenger, CHANNEL).also { it.setMethodCallHandler(this) }
-    private val usb = activity.getSystemService(Context.USB_SERVICE) as UsbManager
+    private val usb = context.getSystemService(Context.USB_SERVICE) as UsbManager
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val opened = HashMap<String, Opened>()
@@ -149,20 +148,20 @@ class UsbBridge(
         }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                activity.unregisterReceiver(this)
+                context.unregisterReceiver(this)
                 result.success(intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false))
             }
         }
         val filter = IntentFilter(ACTION_PERMISSION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            activity.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            activity.registerReceiver(receiver, filter)
+            context.registerReceiver(receiver, filter)
         }
         // Explicit package + mutable: the system adds the grant extras.
-        val intent = Intent(ACTION_PERMISSION).setPackage(activity.packageName)
+        val intent = Intent(ACTION_PERMISSION).setPackage(context.packageName)
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-        usb.requestPermission(device, PendingIntent.getBroadcast(activity, 0, intent, flags))
+        usb.requestPermission(device, PendingIntent.getBroadcast(context, 0, intent, flags))
     }
 
     private fun write(address: String, data: ByteArray, result: MethodChannel.Result) {

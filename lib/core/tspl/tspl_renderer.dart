@@ -118,6 +118,10 @@ class TsplRenderer {
         'GAP ${_mm(gap)} mm,0 mm\r\n'
         'DIRECTION 1,0\r\n'
         'REFERENCE 0,0\r\n'
+        // Feed the printed label out to the tear bar. Without it many printers
+        // (TD, Xprinter) stop with the label still under the head, and it only
+        // comes out with the next label or a manual feed.
+        'SET TEAR ON\r\n'
         'CLS\r\n',
       ))
       ..add(body.toBytes())

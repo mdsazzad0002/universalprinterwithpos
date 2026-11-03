@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -7,7 +8,9 @@ import 'package:flutter/foundation.dart';
 import '../core/connection/printer_connection.dart';
 import '../core/escpos/document_renderer.dart';
 import '../core/escpos/rasterizer.dart';
+import '../core/pdf/test_page.dart';
 import '../core/tspl/tspl_renderer.dart';
+import '../core/zpl/zpl_renderer.dart';
 import '../data/database.dart';
 import '../data/models/client.dart';
 import '../data/models/print_job.dart';
@@ -119,6 +122,13 @@ class PrintService extends ChangeNotifier {
     }
 
     payloadToElements(payload, printer.geometry(widthMm: paperWidth).charsPerLine);
+    final isPdf = payload['document_type'] == 'pdf';
+    if (printer.isDocument && !isPdf) {
+      throw PrintRequestException('Printer "${printer.name}" is an A4 printer and prints PDF only (document_type "pdf")');
+    }
+    if (!printer.isDocument && isPdf) {
+      throw PrintRequestException('PDF needs an A4 / PDF printer; "${printer.name}" is ${printer.protocol.label}');
+    }
 
     final copies = switch (payload['copies']) {
       null => route?.copies ?? 1,
@@ -151,11 +161,25 @@ class PrintService extends ChangeNotifier {
     return (job: job, duplicate: false);
   }
 
-  Future<SubmitResult> testPrint(Printer printer) => submit({
-    'printer_id': printer.id,
-    'document_type': 'elements',
-    'elements': printer.isLabel ? _labelTest(printer) : _receiptTest(printer),
-  }, source: 'test');
+  Future<SubmitResult> testPrint(Printer printer) => submit(
+    printer.isDocument
+        ? {'printer_id': printer.id, 'document_type': 'pdf', 'data': base64.encode(_pageTest(printer))}
+        : {
+            'printer_id': printer.id,
+            'document_type': 'elements',
+            'elements': printer.isLabel ? _labelTest(printer) : _receiptTest(printer),
+          },
+    source: 'test',
+  );
+
+  static Uint8List _pageTest(Printer printer) => testPagePdf([
+    'TEST PAGE',
+    'Printer: ${printer.name}',
+    'Address: ${printer.target}',
+    'Time: ${DateTime.now().toString().substring(0, 19)}',
+    '',
+    'Universal Print',
+  ]);
 
   static List<Map<String, Object>> _receiptTest(Printer printer) => [
     {'type': 'text', 'value': 'TEST PRINT', 'align': 'center', 'bold': true, 'size': 2},
@@ -222,17 +246,21 @@ class PrintService extends ChangeNotifier {
       job = job.copyWith(status: JobStatus.printing);
       await _save(job);
       final connection = _connectionFor(printer);
-      for (var attempt = 1; ; attempt++) {
-        job = job!.copyWith(attempts: job.attempts + 1);
-        try {
-          await connection.send(bytes);
-          break;
-        } catch (_) {
-          if (attempt >= _sendAttempts) rethrow;
-          await Future<void>.delayed(const Duration(seconds: 1));
+      // PDFs cannot be concatenated, so each copy is its own IPP job.
+      final sends = printer.isDocument ? job.copies : 1;
+      for (var copy = 0; copy < sends; copy++) {
+        for (var attempt = 1; ; attempt++) {
+          job = job!.copyWith(attempts: job.attempts + 1);
+          try {
+            await connection.send(bytes);
+            break;
+          } catch (_) {
+            if (attempt >= _sendAttempts) rethrow;
+            await Future<void>.delayed(const Duration(seconds: 1));
+          }
         }
       }
-      await _save(job.copyWith(status: JobStatus.completed, clearError: true));
+      await _save(job!.copyWith(status: JobStatus.completed, clearError: true));
     } catch (e) {
       final message = e is FormatException ? e.message : e.toString();
       await _save(job!.copyWith(status: JobStatus.failed, error: message));
@@ -246,13 +274,17 @@ class PrintService extends ChangeNotifier {
       heightMm: paper is Map && paper['height_mm'] is num ? (paper['height_mm'] as num).round() : null,
     );
     final elements = payloadToElements(job.payload, geometry.charsPerLine);
-    final one = printer.isLabel
-        ? await TsplRenderer(geometry: geometry, gapMm: printer.labelGap, rasterizer: _rasterizer).render(elements)
-        : await DocumentRenderer(
-            paperWidthMm: geometry.widthMm,
-            rasterizer: _rasterizer,
-            autoCut: printer.autoCut,
-          ).render(elements);
+    if (printer.isDocument) return base64.decode(elements.single['base64'] as String);
+    final one = switch (printer.protocol) {
+      PrinterProtocol.tspl =>
+        await TsplRenderer(geometry: geometry, gapMm: printer.labelGap, rasterizer: _rasterizer).render(elements),
+      PrinterProtocol.zpl => await ZplRenderer(geometry: geometry, rasterizer: _rasterizer).render(elements),
+      _ => await DocumentRenderer(
+        paperWidthMm: geometry.widthMm,
+        rasterizer: _rasterizer,
+        autoCut: printer.autoCut,
+      ).render(elements),
+    };
     if (job.copies == 1) return one;
     final all = BytesBuilder(copy: false);
     for (var i = 0; i < job.copies; i++) {

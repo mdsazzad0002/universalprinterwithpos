@@ -6,7 +6,7 @@ import 'rasterizer.dart';
 
 typedef Element = Map<String, dynamic>;
 
-const supportedDocumentTypes = {'receipt', 'elements', 'text', 'raw'};
+const supportedDocumentTypes = {'receipt', 'elements', 'text', 'raw', 'pdf'};
 
 /// Converts a print request payload into a flat list of elements.
 ///
@@ -52,6 +52,13 @@ List<Element> payloadToElements(Map<String, dynamic> payload, int charsPerLine) 
       }
       return [
         {'type': 'raw', 'base64': payload['data']},
+      ];
+    case 'pdf':
+      if (payload['data'] is! String || (payload['data'] as String).isEmpty) {
+        throw const FormatException('"data" must be a base64 PDF for pdf');
+      }
+      return [
+        {'type': 'pdf', 'base64': payload['data']},
       ];
     default:
       throw FormatException(

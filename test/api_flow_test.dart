@@ -138,6 +138,33 @@ void main() {
     expect((await call('GET', '/api/config', token: profile.token)).$1, 401);
   });
 
+  test('PDF goes only to A4 (IPP) printers, one IPP job per copy', () async {
+    await printers.save(Printer(
+      id: 'office', name: 'office', connectionType: ConnectionType.network, address: '10.0.0.7',
+      port: 631, paperWidth: 210, protocol: PrinterProtocol.ipp, createdAt: DateTime(2026),
+    ));
+    final pdf = base64.encode(utf8.encode('%PDF-1.4 fake'));
+
+    final (s1, e1) = await call('POST', '/api/print', body: {'document_type': 'pdf', 'data': pdf});
+    expect(s1, 422, reason: 'default printer is a receipt printer');
+    expect(e1['error'], contains('A4 / PDF printer'));
+
+    final (s2, e2) = await call('POST', '/api/print', body: {'printer_id': 'office', 'document_type': 'text', 'content': 'x'});
+    expect(s2, 422);
+    expect(e2['error'], contains('prints PDF only'));
+
+    final (s3, job) = await call('POST', '/api/print', body: {
+      'printer_id': 'office', 'document_type': 'pdf', 'data': pdf, 'copies': 2,
+    });
+    expect(s3, 202);
+    expect((await waitDone(job['job_id'] as String)).status, JobStatus.completed);
+    expect(sent, ['office', 'office']);
+
+    final (_, list) = await call('GET', '/api/printers');
+    final office = (list['printers'] as List).firstWhere((p) => p['id'] == 'office');
+    expect(office['features'], ['pdf']);
+  });
+
   test('pair, sync routes, print by route', () async {
     final token = await pair();
 

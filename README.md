@@ -27,21 +27,27 @@ Wi-Fi/LAN or USB. See `txt` for the full roadmap.
 | Routes: print type → printer, synced from software | ✅ |
 | Paper width per printer / route / job, geometry exposed to software | ✅ |
 | Batch printing (invoice + kitchen + bar in one call) | ✅ |
-| Background service (API alive when app is closed) | ⏳ next |
-| Android Intent integration | ⏳ next |
-| A4 / PDF (IPP / CUPS), Zebra labels (ZPL) | ⏳ v2 |
+| Background service (API alive when app is closed, starts at boot) | ✅ Android: foreground service, Menu → *Run in background* |
+| Android Intent integration (`action.PRINT`, Share → Universal Print) | ✅ see [docs/API.md](docs/API.md#android-intent-no-http) |
+| Zebra / ZPL label printers | ✅ same elements as TSPL, 203/300 dpi |
+| A4 / PDF (IPP, CUPS queues) | ✅ `document_type: "pdf"` to printers of type *A4 / PDF (IPP)* |
 
 ## Project layout
 
 ```
 lib/
   core/escpos/        ESC/POS builder, document renderer, rasterizer (Bangla, images)
-  core/connection/    Bluetooth bridge + TCP connection
+  core/connection/    Bluetooth, USB, TCP, IPP (A4 PDF), Windows spooler
+  core/tspl/, zpl/    label printer renderers
+  core/pdf/           test page for A4 printers
   data/               SQLite (sqflite) models and repositories
   services/           printer store, clients & routes, print queue, local API server
   ui/                 screens
 android/app/src/main/kotlin/.../BluetoothBridge.kt   Bluetooth SPP
 android/app/src/main/kotlin/.../UsbBridge.kt         USB OTG
+android/app/src/main/kotlin/.../PrintEngine.kt       shared Flutter engine (UI, service, intents)
+android/app/src/main/kotlin/.../PrintForegroundService.kt  background API
+android/app/src/main/kotlin/.../PrintIntentActivity.kt     print from other apps
 linux/                                                Linux desktop runner
 windows/                                              Windows desktop runner
 ```

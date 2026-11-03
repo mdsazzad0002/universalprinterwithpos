@@ -1,16 +1,24 @@
 package com.bdsoft.universal_print
 
+import android.content.Context
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
+/** The UI. It borrows the shared [PrintEngine] instead of owning one. */
 class MainActivity : FlutterActivity() {
-    private var bluetooth: BluetoothBridge? = null
-    private var usb: UsbBridge? = null
 
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        bluetooth = BluetoothBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        usb = UsbBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+    override fun provideFlutterEngine(context: Context): FlutterEngine = PrintEngine.obtain(context)
+
+    override fun shouldDestroyEngineWithHost(): Boolean = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        PrintEngine.attach(this)
+        super.onCreate(savedInstanceState)
+        // Started before, but stopped by the system or an update.
+        if (PrintForegroundService.isEnabled(this) && !PrintForegroundService.isRunning) {
+            PrintForegroundService.start(this)
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -19,14 +27,14 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        bluetooth?.onPermissionResult(requestCode, grantResults)
+        PrintEngine.bluetooth?.onPermissionResult(requestCode, grantResults)
+        PrintEngine.host?.onPermissionResult(requestCode, grantResults)
     }
 
     override fun onDestroy() {
-        bluetooth?.dispose()
-        bluetooth = null
-        usb?.dispose()
-        usb = null
         super.onDestroy()
+        PrintEngine.detach(this)
+        // Without the background service the app stops with its UI, as before.
+        if (!isChangingConfigurations && !PrintForegroundService.isRunning) PrintEngine.destroy()
     }
 }

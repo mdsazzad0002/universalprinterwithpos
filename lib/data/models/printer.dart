@@ -3,7 +3,11 @@ import '../../core/escpos/esc_pos_builder.dart';
 /// Command language the printer understands.
 enum PrinterProtocol {
   escpos('Receipt (ESC/POS)'),
-  tspl('Label (TSPL)');
+  tspl('Label (TSPL)'),
+  zpl('Label (ZPL / Zebra)'),
+
+  /// Office printers (A4) over IPP, including CUPS queues. PDF documents only.
+  ipp('A4 / PDF (IPP)');
 
   const PrinterProtocol(this.label);
 
@@ -48,6 +52,7 @@ class Printer {
   final ConnectionType connectionType;
 
   /// Bluetooth MAC address, network host / IP, or USB `vendorId:productId`.
+  /// IPP printers: host / IP, or a full `ipp://` URL (e.g. a CUPS queue).
   final String address;
   final int? port;
 
@@ -64,10 +69,14 @@ class Printer {
   /// Gap between labels in mm (TSPL).
   final double labelGap;
 
-  bool get isLabel => protocol == PrinterProtocol.tspl;
+  bool get isLabel => protocol == PrinterProtocol.tspl || protocol == PrinterProtocol.zpl;
 
-  /// "80 mm" or "50×30 mm label · 300 dpi".
-  String get paperLabel => isLabel
+  bool get isDocument => protocol == PrinterProtocol.ipp;
+
+  /// "80 mm", "50×30 mm label · 300 dpi" or "A4 · PDF".
+  String get paperLabel => isDocument
+      ? 'A4 · PDF'
+      : isLabel
       ? '$paperWidth×${labelHeight ?? '∞'} mm label · $dpi dpi'
       : '$paperWidth mm';
 
@@ -81,7 +90,7 @@ class Printer {
   final bool isDefault;
   final DateTime createdAt;
 
-  String get target => connectionType == ConnectionType.network ? '$address:${port ?? 9100}' : address;
+  String get target => isDocument || connectionType != ConnectionType.network ? address : '$address:${port ?? 9100}';
 
   Printer copyWith({
     String? name,
