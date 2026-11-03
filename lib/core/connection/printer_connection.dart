@@ -4,14 +4,16 @@ import 'dart:typed_data';
 
 import '../../data/models/printer.dart';
 import 'bluetooth_bridge.dart';
+import 'usb_printers.dart';
 
 /// Sends finished printer bytes to a device.
 abstract class PrinterConnection {
   Future<void> send(Uint8List data);
 
   factory PrinterConnection.forPrinter(Printer printer) => switch (printer.connectionType) {
-    ConnectionType.bluetooth => BluetoothConnection(printer.address),
+    ConnectionType.bluetooth => BluetoothConnection(printer.address, channel: printer.port),
     ConnectionType.network => NetworkConnection(printer.address, printer.port ?? 9100),
+    ConnectionType.usb => UsbConnection(printer.address),
   };
 }
 
@@ -50,12 +52,26 @@ class NetworkConnection implements PrinterConnection {
 /// Bluetooth Classic SPP via the native bridge, which keeps the socket open
 /// between jobs and reconnects when needed.
 class BluetoothConnection implements PrinterConnection {
-  BluetoothConnection(this.address);
+  BluetoothConnection(this.address, {this.channel});
+
+  final String address;
+
+  /// RFCOMM channel (Linux); null = default.
+  final int? channel;
+
+  @override
+  Future<void> send(Uint8List data) => BluetoothBridge.write(address, data, channel: channel);
+}
+
+/// USB OTG on Android, `/dev/usb/lp*` on Linux, an installed printer on
+/// Windows.
+class UsbConnection implements PrinterConnection {
+  UsbConnection(this.address);
 
   final String address;
 
   @override
-  Future<void> send(Uint8List data) => BluetoothBridge.write(address, data);
+  Future<void> send(Uint8List data) => UsbPrinters.write(address, data);
 }
 
 class PrinterConnectionException implements Exception {

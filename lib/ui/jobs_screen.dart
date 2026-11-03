@@ -13,7 +13,19 @@ class JobsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final service = AppScope.of(context).printService;
     return Scaffold(
-      appBar: AppBar(title: const Text('Print jobs')),
+      appBar: AppBar(
+        title: const Text('Print jobs'),
+        actions: [
+          ListenableBuilder(
+            listenable: service,
+            builder: (context, _) => IconButton(
+              tooltip: 'Clear jobs',
+              icon: const Icon(Icons.delete_sweep_outlined),
+              onPressed: service.recentJobs.any((j) => !j.status.isActive) ? () => _clear(context) : null,
+            ),
+          ),
+        ],
+      ),
       body: ListenableBuilder(
         listenable: service,
         builder: (context, _) {
@@ -45,6 +57,23 @@ class JobsScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Future<void> _clear(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear print jobs?'),
+        content: const Text('Completed, failed and cancelled jobs are removed. Jobs still printing are kept.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final removed = await AppScope.of(context).printService.clearFinished();
+    if (context.mounted) showMessage(context, '$removed job(s) cleared');
   }
 
   void _showDetails(BuildContext context, PrintJob job) {
@@ -85,9 +114,10 @@ class JobsScreen extends StatelessWidget {
             ),
           if (!job.status.isActive)
             TextButton(
-              onPressed: () {
-                service.retry(job.id);
+              onPressed: () async {
                 Navigator.pop(ctx);
+                await service.retry(job.id);
+                if (context.mounted) await watchJob(context, job.id);
               },
               child: const Text('Print again'),
             ),

@@ -158,7 +158,7 @@ class _RouteCard extends StatelessWidget {
             decoration: const InputDecoration(labelText: 'Printer', border: OutlineInputBorder(), isDense: true),
             items: [
               const DropdownMenuItem(value: null, child: Text('— Default printer —')),
-              for (final p in printers) DropdownMenuItem(value: p.id, child: Text('${p.name} (${p.paperWidth} mm)')),
+              for (final p in printers) DropdownMenuItem(value: p.id, child: Text('${p.name} (${p.paperLabel})')),
             ],
             onChanged: (id) => s.clients.updateRoute(route.copyWith(printerId: id, clearPrinter: id == null)),
           ),

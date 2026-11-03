@@ -40,7 +40,7 @@ class PrintersScreen extends StatelessWidget {
                     const Icon(Icons.star, size: 16, color: Colors.amber),
                   ],
                 ]),
-                subtitle: Text('${p.target} · ${p.paperWidth} mm · ${p.id}'),
+                subtitle: Text('${p.target} · ${p.paperLabel}'),
                 onTap: () => _openForm(context, p),
                 trailing: PopupMenuButton<String>(
                   onSelected: (action) => _onAction(context, p, action),

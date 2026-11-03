@@ -5,10 +5,12 @@ import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
     private var bluetooth: BluetoothBridge? = null
+    private var usb: UsbBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         bluetooth = BluetoothBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        usb = UsbBridge(this, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     override fun onRequestPermissionsResult(
@@ -23,6 +25,8 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         bluetooth?.dispose()
         bluetooth = null
+        usb?.dispose()
+        usb = null
         super.onDestroy()
     }
 }

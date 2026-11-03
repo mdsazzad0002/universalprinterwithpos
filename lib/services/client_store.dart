@@ -116,6 +116,18 @@ class ClientStore extends ChangeNotifier {
     return client;
   }
 
+  /// Creates an access profile from the app itself (no pairing), for another
+  /// user or software that will connect with the token.
+  Future<ApiClient> createProfile(String name) {
+    final slug = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '');
+    final base = slug.isEmpty ? 'profile' : (slug.length > 40 ? slug.substring(0, 40) : slug);
+    var id = base;
+    for (var i = 2; byId(id) != null || id == ApiClient.manualId; i++) {
+      id = '$base-$i';
+    }
+    return register(id, name.trim());
+  }
+
   Future<void> revoke(String id) async {
     await _clients.delete(id);
     await load();
@@ -193,7 +205,7 @@ class ClientStore extends ChangeNotifier {
       'printer_id': printer?.id,
       'printer_name': printer?.name,
       'copies': r.copies,
-      'paper': width == null ? null : PaperGeometry(width).toJson(),
+      'paper': printer?.geometry(widthMm: width).toJson(),
     };
   }
 }

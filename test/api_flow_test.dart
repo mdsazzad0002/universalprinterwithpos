@@ -39,6 +39,7 @@ void main() {
   late LocalApiServer api;
   late PrinterStore printers;
   late PrintService service;
+  late ClientStore clients;
   late HttpClient http;
   late Uri base;
   late Database db;
@@ -65,7 +66,7 @@ void main() {
     sqfliteFfiInit();
     db = await openAppDatabase(factory: databaseFactoryFfi, path: inMemoryDatabasePath);
     printers = PrinterStore(PrinterRepository(db));
-    final clients = ClientStore(ClientRepository(db), RouteRepository(db), printers);
+    clients = ClientStore(ClientRepository(db), RouteRepository(db), printers);
     printers.onDeleted = clients.onPrinterDeleted;
     await printers.save(printer('cashier', 80, isDefault: true));
     await printers.save(printer('kitchen', 58));
@@ -118,6 +119,25 @@ void main() {
     fail('job $id never finished');
   }
 
+  test('profile created in the app prints with its token; clear keeps queue intact', () async {
+    final profile = await clients.createProfile('Branch 2 POS');
+    expect(profile.id, 'branch-2-pos');
+    expect((await clients.createProfile('Branch 2 POS')).id, 'branch-2-pos-2');
+
+    final (s1, job) = await call('POST', '/api/print', token: profile.token, body: {
+      'document_type': 'text', 'content': 'hello',
+    });
+    expect(s1, 202);
+    expect((await waitDone(job['job_id'] as String)).status, JobStatus.completed);
+    expect((await call('GET', '/api/config', token: profile.token)).$2['client']['client_id'], 'branch-2-pos');
+
+    expect(await service.clearFinished(), 1);
+    expect(service.recentJobs, isEmpty);
+
+    await clients.revoke(profile.id);
+    expect((await call('GET', '/api/config', token: profile.token)).$1, 401);
+  });
+
   test('pair, sync routes, print by route', () async {
     final token = await pair();
 
@@ -157,9 +177,14 @@ void main() {
 
   test('validation and auth errors', () async {
     final token = await pair();
-    expect((await call('GET', '/api/printers')).$1, 401);
+    // Default: same-device requests need no token, but a wrong one is rejected.
+    expect((await call('GET', '/api/printers')).$1, 200);
     expect((await call('GET', '/api/printers', token: 'nope')).$1, 401);
+
+    await api.configure(requireToken: true);
+    expect((await call('GET', '/api/printers')).$1, 401);
     expect((await call('GET', '/api/printers', token: api.token)).$1, 200, reason: 'master token');
+    expect((await call('GET', '/api/printers', token: token)).$1, 200, reason: 'client token');
 
     final (s, wide) = await call('POST', '/api/print', token: token, body: {
       'printer_id': 'kitchen', 'document_type': 'text', 'content': 'x', 'paper': {'width_mm': 80},
@@ -170,6 +195,16 @@ void main() {
     expect((await call('PUT', '/api/routes', token: token, body: {
       'routes': [{'key': 'Bad Key'}],
     })).$1, 422);
+  });
+
+  test('print without token or pairing on the same device', () async {
+    final (_, ping) = await call('GET', '/api/ping');
+    expect(ping['token_required'], isFalse);
+    final (status, job) = await call('POST', '/api/print', body: {'route': 'invoice', 'document_type': 'text', 'content': 'hi'});
+    expect(status, 202);
+    expect(job['printer_id'], 'cashier');
+    final (_, routes) = await call('GET', '/api/routes');
+    expect((routes['routes'] as List).single['key'], 'invoice', reason: 'auto-registered under the manual client');
   });
 
   test('duplicate reference and batch', () async {

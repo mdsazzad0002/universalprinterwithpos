@@ -13,7 +13,13 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Universal Print')),
+      appBar: AppBar(
+        title: Row(children: [
+          Image.asset('assets/logo.png', height: 32, filterQuality: FilterQuality.medium),
+          const SizedBox(width: 10),
+          const Text('Universal Print'),
+        ]),
+      ),
       body: ListenableBuilder(
         listenable: Listenable.merge([s.printers, s.printService, s.apiServer]),
         builder: (context, _) {
@@ -41,7 +47,7 @@ class DashboardScreen extends StatelessWidget {
                   title: Text(printer?.name ?? 'No default printer'),
                   subtitle: Text(printer == null
                       ? 'Add a printer to start printing'
-                      : '${printer.connectionType.label} · ${printer.target} · ${printer.paperWidth} mm'),
+                      : '${printer.connectionType.label} · ${printer.target} · ${printer.paperLabel}'),
                   trailing: printer == null
                       ? FilledButton(onPressed: () => onOpenTab(1), child: const Text('Add'))
                       : FilledButton.tonal(

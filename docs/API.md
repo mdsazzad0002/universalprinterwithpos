@@ -1,14 +1,16 @@
 # Universal Print – Integration API
 
-**Version 1.1** · Base URL `http://127.0.0.1:8765`
+**Version 1.3** · Base URL `http://127.0.0.1:8765`
 
-Universal Print is an Android app that prints directly (no preview) to thermal
-printers over Bluetooth or Wi-Fi/LAN. Your software (POS, ERP, web app) sends
-JSON; the app turns it into printer commands.
+Universal Print is an Android and Linux app that prints directly (no preview)
+to thermal receipt printers (ESC/POS) and label printers (TSPL) over
+Bluetooth, Wi-Fi/LAN or USB. Your software (POS, ERP,
+web app) sends JSON; the app turns it into printer commands.
 
 - [How it works](#how-it-works)
 - [Quick start](#quick-start-5-minutes)
-- [1. Pair once](#1-pair-once)
+- [Authentication: token optional](#authentication-token-optional)
+- [1. Pair once (optional)](#1-pair-once-optional)
 - [2. Declare your print types (routes)](#2-declare-your-print-types-routes)
 - [3. Learn printer sizes](#3-learn-printer-sizes)
 - [4. Print](#4-print)
@@ -37,7 +39,7 @@ owner chooses once in the app which printer each route goes to.
 
 | Concept | Who sets it | When |
 |---|---|---|
-| **Pairing** – your software gets its own token | software asks, user taps *Allow* | once per install |
+| **Pairing** (optional) – your software gets its own token | software asks, user taps *Allow* | once per install |
 | **Routes** – the print types your software uses | software declares them | on every startup (sync) |
 | **Route → printer** | user in the app (or the software) | once, changeable any time |
 | **Paper width** | printer setting, a route override, or per job | any time |
@@ -45,6 +47,25 @@ owner chooses once in the app which printer each route goes to.
 ---
 
 ## Quick start (5 minutes)
+
+### Simplest: software on the same device, no token
+
+Out of the box, software running on the **same phone or computer** prints
+without any key:
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/print \
+  -H "Content-Type: application/json" \
+  -d '{"route":"invoice","reference":"INV-1001",
+       "content":{"store_name":"My Shop","invoice_no":"INV-1001",
+                  "items":[{"name":"Product A","qty":2,"price":100}],"total":200}}'
+```
+
+The first time, the route `invoice` appears in the app under **Connect →
+Manual**. Choose a printer for it once. Until you do, it prints on the
+default printer.
+
+### Full setup: pairing + routes (recommended for products you ship)
 
 ```bash
 # 1. Ask to pair (the app shows an "Allow?" dialog with a 6-digit code)
@@ -73,9 +94,30 @@ curl -X POST http://127.0.0.1:8765/api/print \
 
 ---
 
-## 1. Pair once
+## Authentication: token optional
 
-Pairing gives your software its **own token**. The user can see it in the app
+| Request comes from | *Require API token on this device* **off** (default) | **on** |
+|---|---|---|
+| Same device (`127.0.0.1`) | No token needed | Token required |
+| Another device on Wi-Fi | Token required | Token required |
+
+- With no token, requests count as the **Manual** client. Its routes are shown
+  under *Connect → Manual* in the app.
+- If you **do** send a token, it must be valid. A wrong token always gets
+  `401`, so a misconfiguration is never silently ignored.
+- `GET /api/ping` returns `"token_required": true|false` for the caller, so
+  your software can decide whether it needs to pair.
+
+The switch is in the app under **Connect → Require API token on this device**.
+Turn it on if untrusted apps are installed on the same device.
+
+---
+
+## 1. Pair once (optional)
+
+Pairing is needed when the token is required (other devices, or the switch
+is on). It is also useful on the same device when several programs share one
+printer app. Pairing gives your software its **own token**. The user can see it in the app
 and disconnect it, and its routes are kept separate from other software on the
 same phone.
 
@@ -117,7 +159,7 @@ After a final status, the pairing is deleted and later calls return `404`.
 
 ### Using the token
 
-Send it on every other call:
+When a token is used, send it on every other call:
 
 ```
 Authorization: Bearer <token>
@@ -200,13 +242,15 @@ yourself, for example padding columns to `chars_per_line`.
     {
       "id": "PRN-m9x2k1-a7f3c2",
       "name": "Cashier",
-      "connection_type": "bluetooth",
-      "protocol": "escpos",
+      "connection_type": "bluetooth",      // bluetooth | network | usb
+      "protocol": "escpos",                // escpos (receipt) | tspl (label)
       "is_default": true,
       "auto_cut": true,
       "paper_width": 80,
       "paper": {
+        "type": "roll",                    // roll | label
         "width_mm": 80,
+        "height_mm": null,                 // label height; null = continuous
         "printable_width_mm": 72,
         "dots_per_line": 576,
         "chars_per_line": 48,
@@ -228,6 +272,13 @@ yourself, for example padding columns to `chars_per_line`.
 
 For images, send them at most `dots_per_line` pixels wide. Wider images are
 scaled down automatically.
+
+**Label printers** (`"protocol": "tspl"`, `paper.type: "label"`) print the full
+label width at their own dpi. For example, a 50 × 30 mm label at 300 dpi has
+`dots_per_line: 584` and `height_mm: 30`. The same documents work on both
+printer types. On labels, text is scaled to the same physical size, and `cut`
+and `cash_drawer` are ignored. Keep label content short enough to fit the
+label height, because anything below it is cut off.
 
 ---
 
@@ -254,7 +305,7 @@ scaled down automatically.
 | `reference` | Your own unique id (invoice no., order id). A second request with the same `reference` is **not printed again**; you get the first job back with `"duplicate": true`. Use it so retries after a network error are safe. |
 | `copies` | 1–20. Default: the route's copies, otherwise 1. |
 | `paper.width_mm` | Lays out this job for this paper width (40–112). It must not be wider than the printer's paper. Default: the route's override, otherwise the printer's width. |
-| `paper.height_mm` | Reserved for label printers (v2). Thermal receipts use continuous roll, so the length follows the content. |
+| `paper.height_mm` | **Label printers:** label height for this job (5–1000), overriding the printer's label size. **Receipt printers:** ignored, because a roll is continuous and the length follows the content. |
 | `document_type` | `receipt` (default), `elements`, `text`, `raw`. See [Document formats](#document-formats). |
 
 **How the printer and paper width are chosen**
@@ -441,6 +492,8 @@ routes.
 ```
 start
   │
+  ├─ GET /api/ping ── token_required: false ──▶ (skip pairing)
+  │
   ├─ token saved? ── no ──▶ POST /api/pair ▶ show code ▶ poll ▶ save token
   │
   ├─ PUT /api/routes      (declare your print types)
@@ -467,7 +520,7 @@ know about them.
 
 | HTTP | When | What to do |
 |---|---|---|
-| `401` | Missing, invalid or revoked token | Pair again |
+| `401` | Wrong or revoked token, or no token when one is required | Pair again, or check `token_required` in `/api/ping` |
 | `404` | Unknown job, pairing or path | |
 | `413` | Body larger than 10 MB | Send smaller images |
 | `422` | Invalid payload, unknown printer, paper wider than the printer | Fix the request; `error` says what is wrong |
@@ -481,9 +534,9 @@ an HTTP error. Check `GET /api/jobs/{id}`.
 
 ## Endpoint reference
 
-| Method | Path | Auth | Purpose |
+| Method | Path | Auth¹ | Purpose |
 |---|---|---|---|
-| GET | `/api/ping` | – | App is running? Returns `version` |
+| GET | `/api/ping` | – | App is running? Returns `version`, `token_required` |
 | POST | `/api/pair` | – | Ask to pair |
 | GET | `/api/pair/{pairing_id}` | – | Pairing status (and token once approved) |
 | GET | `/api/config` | ✓ | Client, printers, routes in one call |
@@ -494,11 +547,14 @@ an HTTP error. Check `GET /api/jobs/{id}`.
 | POST | `/api/print/batch` | ✓ | Print up to 20 documents |
 | GET | `/api/jobs/{job_id}` | ✓ | Job status |
 
+¹ ✓ = token needed, except for same-device requests while *Require API token*
+is off. See [Authentication](#authentication-token-optional).
+
 ### Network access
 
 | Your software runs on | URL |
 |---|---|
-| The same Android phone (app or browser) | `http://127.0.0.1:8765` |
+| The same Android phone or Linux PC (app or browser) | `http://127.0.0.1:8765` |
 | Another device on the same Wi-Fi | Turn on **Connect → Allow other devices on Wi-Fi**, then use `http://<phone-ip>:8765` |
 
 CORS is open, so browser `fetch()` works, including from HTTPS pages in

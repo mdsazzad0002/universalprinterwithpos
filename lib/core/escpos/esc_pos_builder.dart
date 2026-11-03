@@ -5,28 +5,39 @@ import 'mono_bitmap.dart';
 
 enum PosAlign { left, center, right }
 
-/// Printable area of a thermal roll at 203 dpi (8 dots/mm).
+/// Printable area of a thermal roll (ESC/POS, 203 dpi) or a label (TSPL,
+/// 203 or 300 dpi, full width printable).
 class PaperGeometry {
-  const PaperGeometry(this.widthMm);
+  const PaperGeometry(this.widthMm, {this.dpi = 203, this.heightMm, this.label = false});
 
   final int widthMm;
+  final int dpi;
 
-  static const dpi = 203;
-  static const minWidthMm = 40;
+  /// Label height; null for continuous roll paper.
+  final int? heightMm;
+  final bool label;
+
+  static const minWidthMm = 20;
   static const maxWidthMm = 112;
 
   /// Standard rolls have fixed printable widths; others use ~90 % of the roll.
   static const _knownDots = {58: 384, 76: 512, 80: 576, 112: 832};
 
-  int get dotsPerLine => _knownDots[widthMm] ?? ((widthMm * 7.2).floor() & ~7);
+  double get dotsPerMm => dpi / 25.4;
 
-  /// Characters per line in Font A (12 dots wide).
-  int get charsPerLine => dotsPerLine ~/ 12;
+  int get dotsPerLine => label
+      ? (widthMm * dotsPerMm).floor() & ~7
+      : _knownDots[widthMm] ?? ((widthMm * 7.2).floor() & ~7);
 
-  double get printableWidthMm => dotsPerLine / 8;
+  /// Characters per line of a 12-dot (at 203 dpi) font.
+  int get charsPerLine => (dotsPerLine / (12 * dpi / 203)).floor();
 
-  Map<String, Object> toJson() => {
+  double get printableWidthMm => (dotsPerLine / dotsPerMm * 10).round() / 10;
+
+  Map<String, Object?> toJson() => {
+    'type': label ? 'label' : 'roll',
     'width_mm': widthMm,
+    'height_mm': heightMm,
     'printable_width_mm': printableWidthMm,
     'dots_per_line': dotsPerLine,
     'chars_per_line': charsPerLine,

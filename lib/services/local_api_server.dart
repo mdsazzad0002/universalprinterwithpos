@@ -6,7 +6,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
-import '../core/escpos/esc_pos_builder.dart';
 import '../data/database.dart';
 import '../data/models/client.dart';
 import '../data/models/printer.dart';
@@ -52,9 +51,10 @@ class LocalApiServer extends ChangeNotifier {
   static const defaultPort = 8765;
   static const maxBodyBytes = 10 * 1024 * 1024;
   static const maxBatchJobs = 20;
-  static const version = '1.1.0';
+  static const version = '1.3.0';
   static const pairingTimeout = Duration(minutes: 3);
   static const _features = ['text', 'bangla', 'image', 'barcode', 'qr', 'cut', 'cash_drawer', 'raw'];
+  static const _labelFeatures = ['text', 'bangla', 'image', 'barcode', 'qr', 'raw'];
 
   HttpServer? _server;
   bool enabled = true;
@@ -62,6 +62,10 @@ class LocalApiServer extends ChangeNotifier {
 
   /// Bind on all interfaces so other devices on the LAN can print.
   bool allowLan = false;
+
+  /// When false, requests from this device (loopback) need no token. Requests
+  /// from other devices on the LAN always need one.
+  bool requireToken = false;
 
   /// Master token for quick manual setup; acts as the `default` client.
   String token = '';
@@ -82,6 +86,7 @@ class LocalApiServer extends ChangeNotifier {
     enabled = (await _settings.get('api_enabled')) != 'false';
     port = int.tryParse(await _settings.get('api_port') ?? '') ?? defaultPort;
     allowLan = (await _settings.get('api_allow_lan')) == 'true';
+    requireToken = (await _settings.get('api_require_token')) == 'true';
     token = await _settings.get('api_token') ?? '';
     if (token.isEmpty) await regenerateToken();
     if (enabled) await start();
@@ -108,7 +113,13 @@ class LocalApiServer extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> configure({bool? enabled, int? port, bool? allowLan}) async {
+  Future<void> configure({bool? enabled, int? port, bool? allowLan, bool? requireToken}) async {
+    if (requireToken != null) {
+      this.requireToken = requireToken;
+      await _settings.set('api_require_token', '$requireToken');
+      notifyListeners();
+      if (enabled == null && port == null && allowLan == null) return;
+    }
     if (enabled != null) {
       this.enabled = enabled;
       await _settings.set('api_enabled', '$enabled');
@@ -167,7 +178,12 @@ class LocalApiServer extends ChangeNotifier {
 
       // --- public ---------------------------------------------------------
       if (route == 'GET /api/ping') {
-        return await _json(res, 200, {'success': true, 'app': 'universal_print', 'version': version});
+        return await _json(res, 200, {
+          'success': true,
+          'app': 'universal_print',
+          'version': version,
+          'token_required': requireToken || req.connectionInfo?.remoteAddress.isLoopback != true,
+        });
       }
       if (route == 'POST /api/pair') return await _startPairing(req, res);
       final pairMatch = RegExp(r'^GET /api/pair/([\w-]+)$').firstMatch(route);
@@ -176,7 +192,13 @@ class LocalApiServer extends ChangeNotifier {
       // --- authenticated --------------------------------------------------
       final clientId = _authenticate(req);
       if (clientId == null) {
-        return await _json(res, 401, {'success': false, 'error': 'Invalid or missing API token', 'code': 'unauthorized'});
+        return await _json(res, 401, {
+          'success': false,
+          'error': requireToken || req.connectionInfo?.remoteAddress.isLoopback != true
+              ? 'Invalid or missing API token'
+              : 'Invalid API token',
+          'code': 'unauthorized',
+        });
       }
       if (clientId != ApiClient.manualId) unawaited(_clients.touch(clientId));
 
@@ -314,18 +336,23 @@ class LocalApiServer extends ChangeNotifier {
 
   Map<String, Object?> _printerJson(Printer p) => {
     ...p.toApiJson(),
-    'paper': PaperGeometry(p.paperWidth).toJson(),
+    'paper': p.geometry().toJson(),
     'auto_cut': p.autoCut,
-    'features': _features,
+    'features': p.isLabel ? _labelFeatures : _features,
   };
 
-  /// Returns the client id for a valid token.
+  /// Returns the client id for a valid token. Without a token, local
+  /// requests are accepted as the manual client unless [requireToken] is on.
+  /// A wrong token is always rejected, so misconfiguration is visible.
   String? _authenticate(HttpRequest req) {
     final auth = req.headers.value(HttpHeaders.authorizationHeader);
     final given = auth != null && auth.startsWith('Bearer ')
         ? auth.substring(7).trim()
         : req.headers.value('x-api-key');
-    if (given == null || given.isEmpty) return null;
+    if (given == null || given.isEmpty) {
+      final local = req.connectionInfo?.remoteAddress.isLoopback ?? false;
+      return !requireToken && local ? ApiClient.manualId : null;
+    }
     if (_constantTimeEquals(given, token)) return ApiClient.manualId;
     return _clients.byToken(given)?.id;
   }

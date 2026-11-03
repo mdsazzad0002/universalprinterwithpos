@@ -1,6 +1,22 @@
+import '../../core/escpos/esc_pos_builder.dart';
+
+/// Command language the printer understands.
+enum PrinterProtocol {
+  escpos('Receipt (ESC/POS)'),
+  tspl('Label (TSPL)');
+
+  const PrinterProtocol(this.label);
+
+  final String label;
+
+  static PrinterProtocol parse(String? value) =>
+      values.firstWhere((p) => p.name == value, orElse: () => escpos);
+}
+
 enum ConnectionType {
   bluetooth('Bluetooth'),
-  network('Wi-Fi / LAN');
+  network('Wi-Fi / LAN'),
+  usb('USB');
 
   const ConnectionType(this.label);
 
@@ -18,7 +34,10 @@ class Printer {
     required this.address,
     this.port,
     this.paperWidth = 58,
-    this.protocol = 'escpos',
+    this.protocol = PrinterProtocol.escpos,
+    this.dpi = 203,
+    this.labelHeight,
+    this.labelGap = 2,
     this.autoCut = true,
     this.isDefault = false,
     required this.createdAt,
@@ -28,13 +47,36 @@ class Printer {
   final String name;
   final ConnectionType connectionType;
 
-  /// Bluetooth MAC address or network host / IP.
+  /// Bluetooth MAC address, network host / IP, or USB `vendorId:productId`.
   final String address;
   final int? port;
 
-  /// Paper width in mm: 58 or 80.
+  /// Paper (roll) or label width in mm.
   final int paperWidth;
-  final String protocol;
+  final PrinterProtocol protocol;
+
+  /// 203 or 300. ESC/POS printers are always treated as 203.
+  final int dpi;
+
+  /// Label height in mm (TSPL). Null = continuous paper, length follows content.
+  final int? labelHeight;
+
+  /// Gap between labels in mm (TSPL).
+  final double labelGap;
+
+  bool get isLabel => protocol == PrinterProtocol.tspl;
+
+  /// "80 mm" or "50×30 mm label · 300 dpi".
+  String get paperLabel => isLabel
+      ? '$paperWidth×${labelHeight ?? '∞'} mm label · $dpi dpi'
+      : '$paperWidth mm';
+
+  PaperGeometry geometry({int? widthMm, int? heightMm}) => PaperGeometry(
+    widthMm ?? paperWidth,
+    dpi: isLabel ? dpi : 203,
+    heightMm: isLabel ? (heightMm ?? labelHeight) : null,
+    label: isLabel,
+  );
   final bool autoCut;
   final bool isDefault;
   final DateTime createdAt;
@@ -57,6 +99,9 @@ class Printer {
     port: port ?? this.port,
     paperWidth: paperWidth ?? this.paperWidth,
     protocol: protocol,
+    dpi: dpi,
+    labelHeight: labelHeight,
+    labelGap: labelGap,
     autoCut: autoCut ?? this.autoCut,
     isDefault: isDefault ?? this.isDefault,
     createdAt: createdAt,
@@ -69,7 +114,10 @@ class Printer {
     'address': address,
     'port': port,
     'paper_width': paperWidth,
-    'protocol': protocol,
+    'protocol': protocol.name,
+    'dpi': dpi,
+    'label_height': labelHeight,
+    'label_gap': labelGap,
     'auto_cut': autoCut ? 1 : 0,
     'is_default': isDefault ? 1 : 0,
     'created_at': createdAt.toIso8601String(),
@@ -82,7 +130,10 @@ class Printer {
     address: r['address'] as String,
     port: r['port'] as int?,
     paperWidth: r['paper_width'] as int? ?? 58,
-    protocol: r['protocol'] as String? ?? 'escpos',
+    protocol: PrinterProtocol.parse(r['protocol'] as String?),
+    dpi: r['dpi'] as int? ?? 203,
+    labelHeight: r['label_height'] as int?,
+    labelGap: (r['label_gap'] as num?)?.toDouble() ?? 2,
     autoCut: r['auto_cut'] == 1,
     isDefault: r['is_default'] == 1,
     createdAt: DateTime.parse(r['created_at'] as String),
@@ -94,7 +145,7 @@ class Printer {
     'name': name,
     'connection_type': connectionType.name,
     'paper_width': paperWidth,
-    'protocol': protocol,
+    'protocol': protocol.name,
     'is_default': isDefault,
   };
 }

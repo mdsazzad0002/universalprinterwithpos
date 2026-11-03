@@ -5,6 +5,7 @@ import '../services/local_api_server.dart';
 import 'api_screen.dart';
 import 'dashboard_screen.dart';
 import 'jobs_screen.dart';
+import 'menu_screen.dart';
 import 'printers_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -77,6 +78,7 @@ class _HomeShellState extends State<HomeShell> {
           const PrintersScreen(),
           const JobsScreen(),
           const ApiScreen(),
+          const MenuScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -87,6 +89,7 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(icon: Icon(Icons.print_outlined), selectedIcon: Icon(Icons.print), label: 'Printers'),
           NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Jobs'),
           NavigationDestination(icon: Icon(Icons.hub_outlined), selectedIcon: Icon(Icons.hub), label: 'Connect'),
+          NavigationDestination(icon: Icon(Icons.menu), selectedIcon: Icon(Icons.menu_open), label: 'Menu'),
         ],
       ),
     );

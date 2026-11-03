@@ -20,9 +20,9 @@ class ApiScreen extends StatelessWidget {
         builder: (context, _) {
           final host = api.allowLan ? '<this-device-ip>' : '127.0.0.1';
           final base = 'http://$host:${api.port}';
+          final auth = api.requireToken ? '  -H "Authorization: Bearer ${api.token}" \\\n' : '';
           final example = '''curl -X POST $base/api/print \\
-  -H "Authorization: Bearer ${api.token}" \\
-  -H "Content-Type: application/json" \\
+$auth  -H "Content-Type: application/json" \\
   -d '{"route":"invoice","reference":"INV-1001",
        "content":{"store_name":"My Shop","invoice_no":"INV-1001",
        "items":[{"name":"Product A","qty":2,"price":100}],
@@ -45,6 +45,16 @@ class ApiScreen extends StatelessWidget {
                 subtitle: Text(api.lastError ?? (api.isRunning ? 'Running on $base' : 'Stopped')),
                 value: api.enabled,
                 onChanged: (v) => api.configure(enabled: v),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Require API token on this device'),
+                subtitle: const Text(
+                  'Off: software on this device prints without any key. '
+                  'Other devices on Wi-Fi always need a token.',
+                ),
+                value: api.requireToken,
+                onChanged: (v) => api.configure(requireToken: v),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

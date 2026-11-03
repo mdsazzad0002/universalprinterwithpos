@@ -1,12 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
 import '../core/connection/printer_connection.dart';
 import '../core/escpos/document_renderer.dart';
-import '../core/escpos/esc_pos_builder.dart';
 import '../core/escpos/rasterizer.dart';
+import '../core/tspl/tspl_renderer.dart';
 import '../data/database.dart';
 import '../data/models/client.dart';
 import '../data/models/print_job.dart';
@@ -112,8 +113,12 @@ class PrintService extends ChangeNotifier {
       );
     }
     final paperWidth = requestedWidth ?? printer.paperWidth;
+    final height = paper?['height_mm'];
+    if (height != null && (height is! num || height < 5 || height > 1000)) {
+      throw const FormatException('"paper.height_mm" must be a number of mm between 5 and 1000');
+    }
 
-    payloadToElements(payload, PaperGeometry(paperWidth).charsPerLine);
+    payloadToElements(payload, printer.geometry(widthMm: paperWidth).charsPerLine);
 
     final copies = switch (payload['copies']) {
       null => route?.copies ?? 1,
@@ -149,21 +154,31 @@ class PrintService extends ChangeNotifier {
   Future<SubmitResult> testPrint(Printer printer) => submit({
     'printer_id': printer.id,
     'document_type': 'elements',
-    'elements': [
-      {'type': 'text', 'value': 'TEST PRINT', 'align': 'center', 'bold': true, 'size': 2},
-      {'type': 'line'},
-      {'type': 'row', 'left': 'Printer', 'right': printer.name},
-      {'type': 'row', 'left': 'Connection', 'right': printer.connectionType.label},
-      {'type': 'row', 'left': 'Paper', 'right': '${printer.paperWidth} mm'},
-      {'type': 'row', 'left': 'Time', 'right': DateTime.now().toString().substring(0, 19)},
-      {'type': 'line'},
-      {'type': 'text', 'value': 'বাংলা লেখা প্রিন্ট পরীক্ষা', 'align': 'center'},
-      {'type': 'row', 'left': 'চাল ২ কেজি', 'right': '১৪০.০০'},
-      {'type': 'line'},
-      {'type': 'qr', 'value': 'universal-print:test:${printer.id}', 'size': 5},
-      {'type': 'text', 'value': 'Universal Print', 'align': 'center'},
-    ],
+    'elements': printer.isLabel ? _labelTest(printer) : _receiptTest(printer),
   }, source: 'test');
+
+  static List<Map<String, Object>> _receiptTest(Printer printer) => [
+    {'type': 'text', 'value': 'TEST PRINT', 'align': 'center', 'bold': true, 'size': 2},
+    {'type': 'line'},
+    {'type': 'row', 'left': 'Printer', 'right': printer.name},
+    {'type': 'row', 'left': 'Connection', 'right': printer.connectionType.label},
+    {'type': 'row', 'left': 'Paper', 'right': printer.paperLabel},
+    {'type': 'row', 'left': 'Time', 'right': DateTime.now().toString().substring(0, 19)},
+    {'type': 'line'},
+    {'type': 'text', 'value': 'বাংলা লেখা প্রিন্ট পরীক্ষা', 'align': 'center'},
+    {'type': 'row', 'left': 'চাল ২ কেজি', 'right': '১৪০.০০'},
+    {'type': 'line'},
+    {'type': 'qr', 'value': 'universal-print:test:${printer.id}', 'size': 5},
+    {'type': 'text', 'value': 'Universal Print', 'align': 'center'},
+  ];
+
+  /// Small enough for a 40×30 mm label.
+  static List<Map<String, Object>> _labelTest(Printer printer) => [
+    {'type': 'text', 'value': 'TEST LABEL', 'align': 'center', 'bold': true, 'size': 2},
+    {'type': 'text', 'value': printer.paperLabel, 'align': 'center'},
+    {'type': 'text', 'value': 'বাংলা লেবেল ✓', 'align': 'center'},
+    {'type': 'barcode', 'value': 'UP-TEST-01', 'height': 40},
+  ];
 
   Future<void> retry(String id) async {
     final job = await _jobs.find(id);
@@ -178,6 +193,13 @@ class PrintService extends ChangeNotifier {
     if (job == null || job.status != JobStatus.pending) return false;
     await _save(job.copyWith(status: JobStatus.cancelled));
     return true;
+  }
+
+  /// Clears the job history; jobs still in the queue are kept.
+  Future<int> clearFinished() async {
+    final removed = await _jobs.deleteFinished();
+    await _reload();
+    return removed;
   }
 
   void _enqueue(String id) {
@@ -195,6 +217,7 @@ class PrintService extends ChangeNotifier {
       job = job.copyWith(status: JobStatus.processing);
       await _save(job);
       final bytes = await _render(printer, job);
+      await _dump(job, bytes);
 
       job = job.copyWith(status: JobStatus.printing);
       await _save(job);
@@ -217,20 +240,37 @@ class PrintService extends ChangeNotifier {
   }
 
   Future<Uint8List> _render(Printer printer, PrintJob job) async {
-    final paperWidth = job.paperWidth ?? printer.paperWidth;
-    final renderer = DocumentRenderer(
-      paperWidthMm: paperWidth,
-      rasterizer: _rasterizer,
-      autoCut: printer.autoCut,
+    final paper = job.payload['paper'];
+    final geometry = printer.geometry(
+      widthMm: job.paperWidth,
+      heightMm: paper is Map && paper['height_mm'] is num ? (paper['height_mm'] as num).round() : null,
     );
-    final elements = payloadToElements(job.payload, PaperGeometry(paperWidth).charsPerLine);
-    final one = await renderer.render(elements);
+    final elements = payloadToElements(job.payload, geometry.charsPerLine);
+    final one = printer.isLabel
+        ? await TsplRenderer(geometry: geometry, gapMm: printer.labelGap, rasterizer: _rasterizer).render(elements)
+        : await DocumentRenderer(
+            paperWidthMm: geometry.widthMm,
+            rasterizer: _rasterizer,
+            autoCut: printer.autoCut,
+          ).render(elements);
     if (job.copies == 1) return one;
     final all = BytesBuilder(copy: false);
     for (var i = 0; i < job.copies; i++) {
       all.add(one);
     }
     return all.toBytes();
+  }
+
+  /// Diagnostics: with UNIVERSAL_PRINT_DUMP_DIR set, every job's printer
+  /// bytes are also written to `<dir>/<job id>.bin`.
+  static Future<void> _dump(PrintJob job, Uint8List bytes) async {
+    final dir = Platform.environment['UNIVERSAL_PRINT_DUMP_DIR'];
+    if (dir == null || dir.isEmpty) return;
+    try {
+      await File('$dir/${job.id}.bin').writeAsBytes(bytes);
+    } on FileSystemException {
+      // Diagnostics must never break printing.
+    }
   }
 
   Future<void> _save(PrintJob job) async {

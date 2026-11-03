@@ -1,25 +1,38 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart' show databaseFactoryFfi, sqfliteFfiInit;
 
 import 'models/client.dart';
 import 'models/print_job.dart';
 import 'models/printer.dart';
 
+/// Android uses the sqflite plugin; desktop (Linux) uses SQLite via FFI and
+/// stores the database under `$XDG_DATA_HOME/universal_print`; Windows under
+/// `%APPDATA%\universal_print`.
 /// [factory] and [path] are overridable for tests (in-memory FFI database).
 Future<Database> openAppDatabase({DatabaseFactory? factory, String? path}) async {
+  final desktop = Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+  if (factory == null && desktop) {
+    sqfliteFfiInit();
+    factory = databaseFactoryFfi;
+  }
   factory ??= databaseFactory;
+  path ??= desktop ? await _desktopDbPath() : p.join(await factory.getDatabasesPath(), 'universal_print.db');
   return factory.openDatabase(
-    path ?? p.join(await factory.getDatabasesPath(), 'universal_print.db'),
+    path,
     options: OpenDatabaseOptions(
-      version: 2,
+      version: 3,
       onCreate: (db, _) async {
         await _createV1(db);
         await _migrateV2(db);
+        await _migrateV3(db);
       },
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) await _migrateV2(db);
+        if (oldVersion < 3) await _migrateV3(db);
       },
     ),
   );
@@ -86,6 +99,23 @@ Future<void> _migrateV2(Database db) async {
   await db.execute('ALTER TABLE print_jobs ADD COLUMN paper_width INTEGER');
 }
 
+Future<String> _desktopDbPath() async {
+  final env = Platform.environment;
+  final base = Platform.isWindows && env['APPDATA'] != null
+      ? env['APPDATA']!
+      : env['XDG_DATA_HOME'] ?? p.join(env['HOME'] ?? env['USERPROFILE'] ?? '.', '.local', 'share');
+  final dir = Directory(p.join(base, 'universal_print'));
+  await dir.create(recursive: true);
+  return p.join(dir.path, 'universal_print.db');
+}
+
+/// v3: label printers (TSPL) need resolution and label size.
+Future<void> _migrateV3(Database db) async {
+  await db.execute('ALTER TABLE printers ADD COLUMN dpi INTEGER NOT NULL DEFAULT 203');
+  await db.execute('ALTER TABLE printers ADD COLUMN label_height INTEGER');
+  await db.execute('ALTER TABLE printers ADD COLUMN label_gap REAL NOT NULL DEFAULT 2');
+}
+
 final _random = Random.secure();
 
 /// Short sortable id, e.g. `PRN-m9x2k1-a7f3`.
@@ -146,6 +176,14 @@ class JobRepository {
     final rows = await _db.query('print_jobs', orderBy: 'created_at DESC', limit: limit);
     return rows.map(PrintJob.fromRow).toList();
   }
+
+  /// Removes finished jobs (completed, failed, cancelled). Queued and
+  /// printing jobs are kept. Returns the number of jobs removed.
+  Future<int> deleteFinished() => _db.delete(
+    'print_jobs',
+    where: 'status NOT IN (?, ?, ?)',
+    whereArgs: [JobStatus.pending.name, JobStatus.processing.name, JobStatus.printing.name],
+  );
 
   /// Jobs left unfinished by a crash or app kill. They are failed rather than
   /// resumed, so a receipt is never printed twice without the user knowing.
