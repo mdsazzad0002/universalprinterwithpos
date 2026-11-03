@@ -30,6 +30,23 @@ enum ConnectionType {
       values.firstWhere((t) => t.name == value, orElse: () => network);
 }
 
+/// When the cash drawer wired to a receipt printer opens by itself. A job's
+/// `open_drawer` overrides this.
+enum CashDrawerMode {
+  none('No drawer'),
+
+  /// Receipts whose `payment_method` is cash.
+  cash('Open on cash payments'),
+  always('Open on every receipt');
+
+  const CashDrawerMode(this.label);
+
+  final String label;
+
+  static CashDrawerMode parse(String? value) =>
+      values.firstWhere((m) => m.name == value, orElse: () => none);
+}
+
 class Printer {
   const Printer({
     required this.id,
@@ -43,6 +60,7 @@ class Printer {
     this.labelHeight,
     this.labelGap = 2,
     this.autoCut = true,
+    this.cashDrawer = CashDrawerMode.none,
     this.isDefault = false,
     required this.createdAt,
   });
@@ -87,6 +105,7 @@ class Printer {
     label: isLabel,
   );
   final bool autoCut;
+  final CashDrawerMode cashDrawer;
   final bool isDefault;
   final DateTime createdAt;
 
@@ -113,6 +132,7 @@ class Printer {
     labelHeight: labelHeight,
     labelGap: labelGap,
     autoCut: autoCut ?? this.autoCut,
+    cashDrawer: cashDrawer,
     isDefault: isDefault ?? this.isDefault,
     createdAt: createdAt,
   );
@@ -129,6 +149,7 @@ class Printer {
     'label_height': labelHeight,
     'label_gap': labelGap,
     'auto_cut': autoCut ? 1 : 0,
+    'cash_drawer': cashDrawer.name,
     'is_default': isDefault ? 1 : 0,
     'created_at': createdAt.toIso8601String(),
   };
@@ -145,6 +166,7 @@ class Printer {
     labelHeight: r['label_height'] as int?,
     labelGap: (r['label_gap'] as num?)?.toDouble() ?? 2,
     autoCut: r['auto_cut'] == 1,
+    cashDrawer: CashDrawerMode.parse(r['cash_drawer'] as String?),
     isDefault: r['is_default'] == 1,
     createdAt: DateTime.parse(r['created_at'] as String),
   );
@@ -157,5 +179,6 @@ class Printer {
     'paper_width': paperWidth,
     'protocol': protocol.name,
     'is_default': isDefault,
+    'cash_drawer': cashDrawer.name,
   };
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../app_services.dart';
 import '../data/models/print_job.dart';
+import '../services/support_store.dart';
+import 'org_items_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -38,7 +40,7 @@ class DashboardScreen extends StatelessWidget {
         ],
       ),
       body: ListenableBuilder(
-        listenable: Listenable.merge([s.printers, s.printService, s.apiServer]),
+        listenable: Listenable.merge([s.printers, s.printService, s.apiServer, s.support]),
         builder: (context, _) {
           final printer = s.printers.defaultPrinter;
           final jobs = s.printService.recentJobs;
@@ -165,9 +167,156 @@ class DashboardScreen extends StatelessWidget {
                         ],
                       ]),
               ),
+              _OrgSection(
+                title: 'Products',
+                icon: Icons.inventory_2_outlined,
+                items: s.support.products,
+                loading: s.support.loading,
+              ),
+              _OrgSection(
+                title: 'Services',
+                icon: Icons.handyman_outlined,
+                items: s.support.services,
+                loading: s.support.loading,
+              ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Horizontal strip of the vendor's products or services, with placeholder
+/// cards while the first answer loads. Hidden when there is nothing to show.
+class _OrgSection extends StatelessWidget {
+  const _OrgSection({required this.title, required this.icon, required this.items, required this.loading});
+
+  final String title;
+  final IconData icon;
+  final List<OrgItem> items;
+  final bool loading;
+
+  static const _cardWidth = 168.0;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty && !loading) return const SizedBox.shrink();
+    void openAll() => Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => OrgItemsScreen(title: title, items: items, icon: icon),
+        ));
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SectionHeader(
+          title,
+          trailing: items.isEmpty ? null : TextButton(onPressed: openAll, child: const Text('View all')),
+        ),
+        SizedBox(
+          height: 196,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: items.isEmpty ? 3 : items.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (context, i) => SizedBox(
+              width: _cardWidth,
+              child: items.isEmpty ? const _SkeletonCard() : _OrgCard(item: items[i], icon: icon),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _OrgCard extends StatelessWidget {
+  const _OrgCard({required this.item, required this.icon});
+
+  final OrgItem item;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final placeholder = ColoredBox(
+      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+      child: Center(child: Icon(icon, size: 36, color: theme.colorScheme.primary)),
+    );
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: item.url == null ? null : () => openLink(context, Uri.parse(item.url!)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          SizedBox(
+            height: 104,
+            child: item.imageUrl == null
+                ? placeholder
+                : Image.network(item.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => placeholder),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(item.title, style: theme.textTheme.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
+              if (item.category ?? item.description case final sub?) ...[
+                const SizedBox(height: 2),
+                Text(
+                  sub,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Pulsing grey card shown in place of a product/service while loading.
+class _SkeletonCard extends StatefulWidget {
+  const _SkeletonCard();
+
+  @override
+  State<_SkeletonCard> createState() => _SkeletonCardState();
+}
+
+class _SkeletonCardState extends State<_SkeletonCard> with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.surfaceContainerHighest;
+    Widget bar(double width, double height) => Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
+        );
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: FadeTransition(
+        opacity: Tween(begin: 0.45, end: 1.0).animate(_pulse),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(height: 104, color: color),
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              bar(120, 14),
+              const SizedBox(height: 8),
+              bar(80, 10),
+            ]),
+          ),
+        ]),
       ),
     );
   }

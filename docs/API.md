@@ -247,6 +247,7 @@ yourself, for example padding columns to `chars_per_line`.
       "protocol": "escpos",                // escpos (receipt) | tspl, zpl (label) | ipp (A4, PDF only)
       "is_default": true,
       "auto_cut": true,
+      "cash_drawer": "cash",               // none | cash | always (see Cash drawer)
       "paper_width": 80,
       "paper": {
         "type": "roll",                    // roll | label
@@ -312,6 +313,8 @@ printer, is rejected with `422`, so check `protocol` when you pick a route.
 | `paper.width_mm` | Lays out this job for this paper width (40–112). It must not be wider than the printer's paper. Default: the route's override, otherwise the printer's width. |
 | `paper.height_mm` | **Label printers:** label height for this job (5–1000), overriding the printer's label size. **Receipt printers:** ignored, because a roll is continuous and the length follows the content. |
 | `document_type` | `receipt` (default), `elements`, `text`, `raw`. See [Document formats](#document-formats). |
+| `payment_method` | `"cash"`, `"card"`, … or a list for split payments (`["card", "cash"]`). Also read from a receipt's `content.payment_method`. Opens the drawer on printers set to *Open on cash payments*. See [Cash drawer](#cash-drawer). |
+| `open_drawer` | `true` / `false`: open the cash drawer with this job or not, whatever the printer setting. |
 
 **How the printer and paper width are chosen**
 
@@ -364,6 +367,44 @@ does not stop the others.
 ```json
 { "success": false, "results": [ { "success": true, "job_id": "…" }, { "success": true, "job_id": "…" }, { "success": false, "error": "…" } ] }
 ```
+
+### Cash drawer
+
+A drawer is wired to a receipt (ESC/POS) printer. In the app, each receipt
+printer has a **Cash drawer** setting, also returned as `cash_drawer` by
+`GET /api/printers`:
+
+| Setting | `cash_drawer` | The drawer opens with a print job when… |
+|---|---|---|
+| No drawer | `none` | never (default) |
+| Open on cash payments | `cash` | `payment_method` is or includes `"cash"` |
+| Open on every receipt | `always` | every job |
+
+`open_drawer: true` or `false` on a job overrides the setting. The drawer opens
+once per job, as printing starts, even with `copies` > 1. Label and A4
+printers never open a drawer.
+
+```json
+{ "route": "invoice", "reference": "INV-1042", "payment_method": "cash", "content": { "...": "..." } }
+```
+
+### `POST /api/drawer`
+
+Opens the drawer **without printing**, for example when the cashier takes cash
+for an order whose receipt was already printed, or for a *No sale* button.
+The body is optional and picks the printer like a print job:
+
+```json
+{ "route": "invoice", "reference": "INV-1042-DRAWER" }
+```
+
+| Field | Description |
+|---|---|
+| `printer_id` / `route` | Printer to use. Default: the default printer. |
+| `reference` | A repeated request with the same `reference` does not open the drawer again. |
+
+Response `202` is a normal job (see [Job status](#job-status)). A label or A4
+printer is rejected with `422`.
 
 ---
 
@@ -561,6 +602,7 @@ an HTTP error. Check `GET /api/jobs/{id}`.
 | PUT | `/api/routes` | ✓ | Declare / sync routes |
 | POST | `/api/print` | ✓ | Print one document |
 | POST | `/api/print/batch` | ✓ | Print up to 20 documents |
+| POST | `/api/drawer` | ✓ | Open the cash drawer without printing |
 | GET | `/api/jobs/{job_id}` | ✓ | Job status |
 
 ¹ ✓ = token needed, except for same-device requests while *Require API token*

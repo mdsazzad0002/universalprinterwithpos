@@ -233,6 +233,14 @@ class LocalApiServer extends ChangeNotifier {
             'duplicate': result.duplicate,
             ...result.job.toApiJson(),
           });
+        case 'POST /api/drawer':
+          final body = req.contentLength == 0 ? <String, dynamic>{} : await _readJson(req);
+          final result = await _printService.openDrawer(body, clientId: clientId);
+          return await _json(res, result.duplicate ? 200 : 202, {
+            'success': true,
+            'duplicate': result.duplicate,
+            ...result.job.toApiJson(),
+          });
         case 'POST /api/print/batch':
           final jobs = (await _readJson(req))['jobs'];
           if (jobs is! List || jobs.isEmpty || jobs.length > maxBatchJobs) {

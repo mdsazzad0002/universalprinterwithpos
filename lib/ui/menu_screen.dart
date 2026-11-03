@@ -7,6 +7,7 @@ import '../services/local_api_server.dart';
 import '../services/support_store.dart';
 import 'api_profiles_screen.dart';
 import 'api_screen.dart';
+import 'org_items_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -165,6 +166,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     final info = support.info;
     final theme = Theme.of(context);
     Uri web(String v) => Uri.parse(v.contains('://') ? v : 'https://$v');
+    Uri tel(String v) => Uri(scheme: 'tel', path: v.replaceAll(RegExp(r'[^\d+]'), ''));
     const socialIcons = {
       'facebook': Icons.facebook,
       'youtube': Icons.smart_display_outlined,
@@ -174,7 +176,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     };
 
     return SettingsGroup(
-      title: 'Contact & support',
+      title: info?.name ?? 'Contact & support',
       trailing: support.loading
           ? const Padding(
               padding: EdgeInsets.all(12),
@@ -187,7 +189,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
               onPressed: support.refresh,
             ),
       children: [
-        if (info == null || info.isEmpty)
+        if ((info == null || info.isEmpty) && support.products.isEmpty && support.services.isEmpty)
           ListTile(
             leading: const IconBadge(Icons.support_agent_rounded, size: 38),
             title: const Text('Contact details not available'),
@@ -196,60 +198,89 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                 : support.error ?? 'Check back later'),
           )
         else ...[
-          if (info.whatsappUrl != null)
-            ListTile(
-              leading: const IconBadge(Icons.chat_rounded, size: 38, color: Color(0xFF25D366)),
-              title: const Text('WhatsApp'),
-              subtitle: Text(info.whatsapp == null ? 'Chat with us' : '+${info.whatsapp}'),
-              trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-              onTap: () => openLink(context, Uri.parse(info.whatsappUrl!)),
-            ),
-          if (info.phone != null)
-            ListTile(
-              leading: const IconBadge(Icons.call_outlined, size: 38, color: successColor),
-              title: const Text('Call'),
-              subtitle: Text(info.phone!),
-              onTap: () => openLink(context, Uri(scheme: 'tel', path: info.phone!.replaceAll(RegExp(r'[^\d+]'), ''))),
-            ),
-          if (info.email != null)
-            ListTile(
-              leading: const IconBadge(Icons.mail_outline_rounded, size: 38),
-              title: const Text('Email'),
-              subtitle: Text(info.email!),
-              onTap: () => openLink(context, Uri(scheme: 'mailto', path: info.email)),
-            ),
-          if (info.website != null)
-            ListTile(
-              leading: const IconBadge(Icons.language_rounded, size: 38),
-              title: const Text('Website'),
-              subtitle: Text(info.website!),
-              trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-              onTap: () => openLink(context, web(info.website!)),
-            ),
-          if (info.address != null)
-            ListTile(
-              leading: const IconBadge(Icons.location_on_outlined, size: 38, color: warningColor),
-              title: const Text('Address'),
-              subtitle: Text(info.address!),
-              trailing: const Icon(Icons.copy_rounded, size: 18),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: info.address!));
-                showMessage(context, 'Address copied');
-              },
-            ),
-          if (info.socials.isNotEmpty)
+          if (info?.about != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: Wrap(spacing: 4, children: [
-                for (final MapEntry(key: name, value: url) in info.socials.entries)
-                  IconButton(
-                    tooltip: name[0].toUpperCase() + name.substring(1),
-                    color: theme.colorScheme.primary,
-                    icon: Icon(socialIcons[name] ?? Icons.link_rounded),
-                    onPressed: () => openLink(context, web(url)),
-                  ),
-              ]),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(info!.about!, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             ),
+          if (info?.helpline != null)
+            ListTile(
+              leading: const IconBadge(Icons.support_agent_rounded, size: 38, color: successColor),
+              title: const Text('Helpline'),
+              subtitle: Text([info!.helpline!, ?info.openingTime].join(' · ')),
+              trailing: const Icon(Icons.call_outlined, size: 18),
+              onTap: () => openLink(context, tel(info.helpline!)),
+            ),
+          if (support.products.isNotEmpty)
+            _MenuItem(
+              icon: Icons.inventory_2_outlined,
+              title: 'Products',
+              subtitle: '${support.products.length} product(s) we sell',
+              builder: (_) => OrgItemsScreen(title: 'Products', items: support.products, icon: Icons.inventory_2_outlined),
+            ),
+          if (support.services.isNotEmpty)
+            _MenuItem(
+              icon: Icons.handyman_outlined,
+              title: 'Services',
+              subtitle: '${support.services.length} service(s) we offer',
+              builder: (_) => OrgItemsScreen(title: 'Services', items: support.services, icon: Icons.handyman_outlined),
+            ),
+          if (info != null) ...[
+            if (info.whatsappUrl != null)
+              ListTile(
+                leading: const IconBadge(Icons.chat_rounded, size: 38, color: Color(0xFF25D366)),
+                title: const Text('WhatsApp'),
+                subtitle: Text(info.whatsapp == null ? 'Chat with us' : '+${info.whatsapp}'),
+                trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+                onTap: () => openLink(context, Uri.parse(info.whatsappUrl!)),
+              ),
+            if (info.phone != null)
+              ListTile(
+                leading: const IconBadge(Icons.call_outlined, size: 38, color: successColor),
+                title: const Text('Call'),
+                subtitle: Text(info.phone!),
+                onTap: () => openLink(context, tel(info.phone!)),
+              ),
+            if (info.email != null)
+              ListTile(
+                leading: const IconBadge(Icons.mail_outline_rounded, size: 38),
+                title: const Text('Email'),
+                subtitle: Text(info.email!),
+                onTap: () => openLink(context, Uri(scheme: 'mailto', path: info.email)),
+              ),
+            if (info.website != null)
+              ListTile(
+                leading: const IconBadge(Icons.language_rounded, size: 38),
+                title: const Text('Website'),
+                subtitle: Text(info.website!),
+                trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+                onTap: () => openLink(context, web(info.website!)),
+              ),
+            if (info.address != null)
+              ListTile(
+                leading: const IconBadge(Icons.location_on_outlined, size: 38, color: warningColor),
+                title: const Text('Address'),
+                subtitle: Text(info.address!),
+                trailing: const Icon(Icons.copy_rounded, size: 18),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: info.address!));
+                  showMessage(context, 'Address copied');
+                },
+              ),
+            if (info.socials.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: Wrap(spacing: 4, children: [
+                  for (final MapEntry(key: name, value: url) in info.socials.entries)
+                    IconButton(
+                      tooltip: name[0].toUpperCase() + name.substring(1),
+                      color: theme.colorScheme.primary,
+                      icon: Icon(socialIcons[name] ?? Icons.link_rounded),
+                      onPressed: () => openLink(context, web(url)),
+                    ),
+                ]),
+              ),
+          ],
         ],
       ],
     );

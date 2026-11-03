@@ -24,15 +24,17 @@ Future<Database> openAppDatabase({DatabaseFactory? factory, String? path}) async
   return factory.openDatabase(
     path,
     options: OpenDatabaseOptions(
-      version: 3,
+      version: 4,
       onCreate: (db, _) async {
         await _createV1(db);
         await _migrateV2(db);
         await _migrateV3(db);
+        await _migrateV4(db);
       },
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) await _migrateV2(db);
         if (oldVersion < 3) await _migrateV3(db);
+        if (oldVersion < 4) await _migrateV4(db);
       },
     ),
   );
@@ -114,6 +116,11 @@ Future<void> _migrateV3(Database db) async {
   await db.execute('ALTER TABLE printers ADD COLUMN dpi INTEGER NOT NULL DEFAULT 203');
   await db.execute('ALTER TABLE printers ADD COLUMN label_height INTEGER');
   await db.execute('ALTER TABLE printers ADD COLUMN label_gap REAL NOT NULL DEFAULT 2');
+}
+
+/// v4: receipt printers can open their cash drawer by themselves.
+Future<void> _migrateV4(Database db) async {
+  await db.execute("ALTER TABLE printers ADD COLUMN cash_drawer TEXT NOT NULL DEFAULT 'none'");
 }
 
 final _random = Random.secure();

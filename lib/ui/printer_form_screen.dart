@@ -36,6 +36,7 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
   ];
   late var _paperWidth = widget.printer?.paperWidth ?? 58;
   late var _autoCut = widget.printer?.autoCut ?? true;
+  late var _cashDrawer = widget.printer?.cashDrawer ?? CashDrawerMode.none;
   late var _protocol = widget.printer?.protocol ?? PrinterProtocol.escpos;
   late var _dpi = widget.printer?.dpi ?? 203;
   late final _labelWidth = TextEditingController(
@@ -222,6 +223,20 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
                 value: _autoCut,
                 onChanged: (v) => setState(() => _autoCut = v),
               ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<CashDrawerMode>(
+                initialValue: _cashDrawer,
+                decoration: const InputDecoration(
+                  labelText: 'Cash drawer',
+                  prefixIcon: Icon(Icons.point_of_sale_rounded),
+                  helperText: 'Software can still open it any time (open_drawer, POST /api/drawer)',
+                  helperMaxLines: 2,
+                ),
+                items: [
+                  for (final m in CashDrawerMode.values) DropdownMenuItem(value: m, child: Text(m.label)),
+                ],
+                onChanged: (v) => setState(() => _cashDrawer = v!),
+              ),
             ] else ...[
               Text('Resolution', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 8),
@@ -392,6 +407,7 @@ class _PrinterFormScreenState extends State<PrinterFormScreen> {
       port: network ? int.parse(_port.text) : null,
       paperWidth: ipp ? 210 : (label ? int.parse(_labelWidth.text.trim()) : _paperWidth),
       autoCut: _autoCut,
+      cashDrawer: _protocol == PrinterProtocol.escpos ? _cashDrawer : CashDrawerMode.none,
       protocol: _protocol,
       dpi: label ? _dpi : 203,
       labelHeight: label ? int.tryParse(_labelHeight.text.trim()) : null,

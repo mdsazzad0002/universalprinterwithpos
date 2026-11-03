@@ -121,7 +121,14 @@ class PrintService extends ChangeNotifier {
       throw const FormatException('"paper.height_mm" must be a number of mm between 5 and 1000');
     }
 
-    payloadToElements(payload, printer.geometry(widthMm: paperWidth).charsPerLine);
+    final elements = payloadToElements(payload, printer.geometry(widthMm: paperWidth).charsPerLine);
+    if (printer.isLabel && elements.isNotEmpty && elements.every((e) => e['type'] == 'cash_drawer')) {
+      throw PrintRequestException('Printer "${printer.name}" is a label printer and has no cash drawer');
+    }
+    if (payload['open_drawer'] case final v? when v is! bool) {
+      throw const FormatException('"open_drawer" must be true or false');
+    }
+    _paymentMethods(payload);
     final isPdf = payload['document_type'] == 'pdf';
     if (printer.isDocument && !isPdf) {
       throw PrintRequestException('Printer "${printer.name}" is an A4 printer and prints PDF only (document_type "pdf")');
@@ -173,16 +180,52 @@ class PrintService extends ChangeNotifier {
         };
 
   /// Kicks the cash drawer wired to a receipt printer, without printing.
-  Future<SubmitResult> openCashDrawer(Printer printer) => submit(
+  Future<SubmitResult> openCashDrawer(Printer printer) => openDrawer({'printer_id': printer.id}, source: 'drawer');
+
+  /// Opens the drawer of the printer [request] picks the same way a print job
+  /// does (`printer_id`, `route`, default printer); `reference` prevents a
+  /// retried request from opening it twice.
+  Future<SubmitResult> openDrawer(
+    Map<String, dynamic> request, {
+    String source = 'api',
+    String clientId = ApiClient.manualId,
+  }) => submit(
     {
-      'printer_id': printer.id,
+      for (final key in const ['printer_id', 'route', 'reference'])
+        if (request[key] != null) key: request[key],
       'document_type': 'elements',
       'elements': [
         {'type': 'cash_drawer'},
       ],
     },
-    source: 'drawer',
+    source: source,
+    clientId: clientId,
   );
+
+  /// Whether a job on [printer] also opens the cash drawer: the job's
+  /// `open_drawer` decides when given, otherwise the printer's [CashDrawerMode].
+  static bool wantsDrawer(Printer printer, Map<String, dynamic> payload) {
+    if (printer.protocol != PrinterProtocol.escpos) return false;
+    if (payload['open_drawer'] case final bool open) return open;
+    return switch (printer.cashDrawer) {
+      CashDrawerMode.none => false,
+      CashDrawerMode.always => true,
+      CashDrawerMode.cash => _paymentMethods(payload).contains('cash'),
+    };
+  }
+
+  /// `payment_method` of the job, or of a receipt's `content`: one method or a
+  /// list for split payments, lower-cased.
+  static List<String> _paymentMethods(Map<String, dynamic> payload) {
+    final content = payload['content'];
+    final value = payload['payment_method'] ?? (content is Map ? content['payment_method'] : null);
+    return switch (value) {
+      null => const [],
+      String s => [s.trim().toLowerCase()],
+      List l when l.every((e) => e is String) => [for (final e in l) (e as String).trim().toLowerCase()],
+      _ => throw const FormatException('"payment_method" must be a string or an array of strings'),
+    };
+  }
 
   static Uint8List _pageTest(Printer printer) => testPagePdf([
     'TEST PAGE',
@@ -297,8 +340,15 @@ class PrintService extends ChangeNotifier {
         autoCut: printer.autoCut,
       ).render(elements),
     };
-    if (job.copies == 1) return one;
+    // The drawer opens once per job, not per copy, while the receipt prints.
+    final kick = !elements.any((e) => e['type'] == 'cash_drawer') && wantsDrawer(printer, job.payload)
+        ? await DocumentRenderer(paperWidthMm: geometry.widthMm, rasterizer: _rasterizer).render(const [
+            {'type': 'cash_drawer'},
+          ])
+        : null;
+    if (job.copies == 1 && kick == null) return one;
     final all = BytesBuilder(copy: false);
+    if (kick != null) all.add(kick);
     for (var i = 0; i < job.copies; i++) {
       all.add(one);
     }

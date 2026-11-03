@@ -26,13 +26,27 @@ class _Rasterizer implements Rasterizer {
   Future<MonoBitmap> decodeImage(Uint8List encoded, {required int maxWidth}) async => _bmp;
 }
 
-/// Records which printer received bytes.
+/// Records which printer received bytes, and the bytes.
 class _Connection implements PrinterConnection {
-  _Connection(this.printer, this.sent);
+  _Connection(this.printer, this.sent, this.data);
   final Printer printer;
   final List<String> sent;
+  final List<Uint8List> data;
   @override
-  Future<void> send(Uint8List data) async => sent.add(printer.id);
+  Future<void> send(Uint8List bytes) async {
+    sent.add(printer.id);
+    data.add(bytes);
+  }
+}
+
+/// How many times [bytes] kick the cash drawer (ESC p).
+int _kicks(Uint8List bytes) {
+  const kick = [0x1B, 0x70, 0x00, 0x19, 0xFA];
+  var n = 0;
+  for (var i = 0; i + kick.length <= bytes.length; i++) {
+    if (Iterable<int>.generate(kick.length).every((k) => bytes[i + k] == kick[k])) n++;
+  }
+  return n;
 }
 
 void main() {
@@ -44,10 +58,11 @@ void main() {
   late Uri base;
   late Database db;
   final sent = <String>[];
+  final sentBytes = <Uint8List>[];
 
-  Printer printer(String id, int width, {bool isDefault = false}) => Printer(
+  Printer printer(String id, int width, {bool isDefault = false, CashDrawerMode drawer = CashDrawerMode.none}) => Printer(
     id: id, name: id, connectionType: ConnectionType.network, address: '10.0.0.1',
-    port: 9100, paperWidth: width, isDefault: isDefault, createdAt: DateTime(2026),
+    port: 9100, paperWidth: width, isDefault: isDefault, cashDrawer: drawer, createdAt: DateTime(2026),
   );
 
   Future<(int, Map<String, dynamic>)> call(String method, String path, {String? token, Object? body}) async {
@@ -72,7 +87,7 @@ void main() {
     await printers.save(printer('kitchen', 58));
     service = PrintService(
       jobs: JobRepository(db), printers: printers, clients: clients,
-      rasterizer: _Rasterizer(), connectionFor: (p) => _Connection(p, sent),
+      rasterizer: _Rasterizer(), connectionFor: (p) => _Connection(p, sent, sentBytes),
     );
     await service.init();
     final settings = SettingsRepository(db);
@@ -82,6 +97,7 @@ void main() {
     http = HttpClient();
     base = Uri.parse('http://127.0.0.1:${api.boundPort}');
     sent.clear();
+    sentBytes.clear();
   });
 
   tearDown(() async {
@@ -252,6 +268,34 @@ void main() {
     expect(s3, 207);
     expect(batch['success'], isFalse);
     expect((batch['results'] as List).map((r) => r['success']), [true, false]);
+  });
+
+  test('cash drawer opens by printer setting, payment method, open_drawer and /api/drawer', () async {
+    await printers.save(printer('cashier', 80, isDefault: true, drawer: CashDrawerMode.cash));
+    Future<int> kicksFor(Map<String, Object?> body) async {
+      final (status, job) = await call('POST', '/api/print', body: {'document_type': 'text', 'content': 'x', ...body});
+      expect(status, 202, reason: '$job');
+      expect((await waitDone(job['job_id'] as String)).status, JobStatus.completed);
+      return _kicks(sentBytes.last);
+    }
+
+    expect(await kicksFor({}), 0);
+    expect(await kicksFor({'payment_method': 'card'}), 0);
+    expect(await kicksFor({'payment_method': 'Cash', 'copies': 2}), 1, reason: 'once per job, not per copy');
+    expect(await kicksFor({'payment_method': ['card', 'cash']}), 1);
+    expect(await kicksFor({'payment_method': 'cash', 'open_drawer': false}), 0);
+    expect(await kicksFor({'printer_id': 'kitchen', 'payment_method': 'cash'}), 0, reason: 'kitchen has no drawer');
+    expect(await kicksFor({'printer_id': 'kitchen', 'open_drawer': true}), 1);
+
+    final (status, job) = await call('POST', '/api/drawer');
+    expect(status, 202);
+    expect(job['printer_id'], 'cashier');
+    await waitDone(job['job_id'] as String);
+    expect(_kicks(sentBytes.last), 1);
+
+    expect((await call('POST', '/api/drawer', body: {'printer_id': 'nope'})).$1, 422);
+    expect((await call('POST', '/api/print', body: {'document_type': 'text', 'content': 'x', 'open_drawer': 'yes'})).$1, 422);
+    expect((await call('POST', '/api/print', body: {'document_type': 'text', 'content': 'x', 'payment_method': 5})).$1, 422);
   });
 
   test('deleting a printer unassigns its routes', () async {

@@ -15,6 +15,7 @@ Wi-Fi/LAN or USB. See `txt` for the full roadmap.
 | API token optional for same-device software | ✅ |
 | Wi-Fi / LAN printers (raw TCP 9100) | ✅ |
 | ESC/POS: text, bold, size, align, rows, separator, cut, cash drawer | ✅ |
+| Cash drawer per printer: open on cash payments / every receipt, `open_drawer`, `POST /api/drawer` | ✅ |
 | Label printers (TSPL: TSC, Xprinter label, HPRT, TD-series), 203/300 dpi, label width × height | ✅ |
 | Live print feedback in the app (Printing… → printed / error + Retry) | ✅ |
 | Barcode (CODE128), QR (native) | ✅ |
