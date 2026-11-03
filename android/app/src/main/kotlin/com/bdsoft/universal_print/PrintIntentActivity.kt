@@ -22,6 +22,8 @@ import java.util.concurrent.Executors
  *   body of `POST /api/print`) or `text`; optional `token`, `printer_id`,
  *   `route`, `reference`, `copies`. Use startActivityForResult to get
  *   `job_id` / `status`, or `error`.
+ * - `com.bdsoft.universal_print.action.OPEN_DRAWER`: opens the cash drawer
+ *   without printing; optional `printer_id`, `route`, `reference`, `token`.
  * - Share (ACTION_SEND) of text, an image or a PDF from any app.
  *
  * See docs/API.md, "Android Intent".
@@ -30,6 +32,7 @@ class PrintIntentActivity : Activity() {
 
     companion object {
         const val ACTION_PRINT = "com.bdsoft.universal_print.action.PRINT"
+        const val ACTION_OPEN_DRAWER = "com.bdsoft.universal_print.action.OPEN_DRAWER"
         private const val MAX_BYTES = 10 * 1024 * 1024
     }
 
@@ -63,8 +66,15 @@ class PrintIntentActivity : Activity() {
         super.onDestroy()
     }
 
-    /** `{payload: <json string>, token: <string?>}` for the Dart side. */
+    /** `{payload: <json string>, token: <string?>, drawer: <bool>}` for the Dart side. */
     private fun buildRequest(intent: Intent): Map<String, Any?> {
+        if (intent.action == ACTION_OPEN_DRAWER) {
+            val request = JSONObject()
+            for (key in listOf("printer_id", "route", "reference")) {
+                intent.getStringExtra(key)?.let { request.put(key, it) }
+            }
+            return mapOf("payload" to request.toString(), "token" to intent.getStringExtra("token"), "drawer" to true)
+        }
         val payload = when (intent.action) {
             ACTION_PRINT -> {
                 val json = intent.getStringExtra("payload")
@@ -138,7 +148,13 @@ class PrintIntentActivity : Activity() {
             }
         }
         setResult(if (ok) RESULT_OK else RESULT_CANCELED, data)
-        val message = if (ok) "Sent to ${result["printer_name"] ?: "printer"}" else "Print failed: ${result["error"]}"
+        val drawer = intent.action == ACTION_OPEN_DRAWER
+        val message = when {
+            ok && drawer -> "Opening cash drawer"
+            ok -> "Sent to ${result["printer_name"] ?: "printer"}"
+            drawer -> "Cash drawer failed: ${result["error"]}"
+            else -> "Print failed: ${result["error"]}"
+        }
         Toast.makeText(applicationContext, message, if (ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
         finish()
     }

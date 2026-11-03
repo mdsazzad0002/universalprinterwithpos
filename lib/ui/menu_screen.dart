@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 
 import '../app_services.dart';
 import '../services/android_host.dart';
+import '../services/desktop_background.dart';
 import '../services/local_api_server.dart';
 import '../services/support_store.dart';
 import 'api_profiles_screen.dart';
 import 'api_screen.dart';
 import 'org_items_screen.dart';
+import 'system_printer_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -44,7 +46,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(title: const Text('Menu')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([s.clients, s.apiServer, s.host, s.printers, s.theme, s.support]),
+        listenable: Listenable.merge([s.clients, s.apiServer, s.host, s.printers, s.theme, s.support, s.systemPrinter, s.desktop]),
         builder: (context, _) {
           final theme = Theme.of(context);
           final profiles = s.clients.clients.length;
@@ -126,6 +128,14 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                     subtitle: 'API on/off, port, master token, routes',
                     builder: (_) => const ApiScreen(),
                   ),
+                  _MenuItem(
+                    icon: Icons.print_outlined,
+                    title: 'System printer',
+                    subtitle: s.systemPrinter.isRunning
+                        ? 'On: print from any program with the built-in driver; manage OS printers'
+                        : 'Print from any program with the built-in driver; manage OS printers',
+                    builder: (_) => const SystemPrinterScreen(),
+                  ),
                 ],
               ),
               if (AndroidHost.isSupported)
@@ -154,12 +164,49 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                       ),
                   ],
                 ),
+              if (DesktopBackground.isSupported)
+                SettingsGroup(
+                  title: 'Background',
+                  children: [
+                    SwitchListTile(
+                      secondary: const IconBadge(Icons.play_circle_outline, size: 38),
+                      title: const Text('Start at login'),
+                      subtitle: Text(s.desktop.lastError ??
+                          'Starts hidden when you log in, so software can always print. '
+                              'Closing the window keeps it running.'),
+                      value: s.desktop.startAtLogin,
+                      onChanged: s.desktop.setStartAtLogin,
+                    ),
+                    ListTile(
+                      leading: IconBadge(Icons.power_settings_new_rounded, size: 38, color: theme.colorScheme.error),
+                      title: const Text('Quit Universal Print'),
+                      subtitle: const Text('Stops the print API and the system printer until it is opened again'),
+                      onTap: () => _confirmQuit(context),
+                    ),
+                  ],
+                ),
               _contactGroup(context, s.support),
             ],
           );
         },
       ),
     );
+  }
+
+  Future<void> _confirmQuit(BuildContext context) async {
+    final desktop = AppScope.of(context).desktop;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quit Universal Print?'),
+        content: const Text('Software and system printers cannot print here until Universal Print is opened again.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Quit')),
+        ],
+      ),
+    );
+    if (ok == true) desktop.quit();
   }
 
   Widget _contactGroup(BuildContext context, SupportStore support) {

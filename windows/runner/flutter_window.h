@@ -15,6 +15,10 @@ class FlutterWindow : public Win32Window {
   explicit FlutterWindow(const flutter::DartProject& project);
   virtual ~FlutterWindow();
 
+  // Started with --background (login): the window stays hidden until the
+  // app is opened again.
+  void SetStartHidden(bool hidden) { start_hidden_ = hidden; }
+
  protected:
   // Win32Window:
   bool OnCreate() override;
@@ -23,6 +27,8 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  bool start_hidden_ = false;
+
   // The project to run.
   flutter::DartProject project_;
 

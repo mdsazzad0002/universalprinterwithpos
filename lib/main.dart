@@ -4,9 +4,9 @@ import 'app_services.dart';
 import 'ui/home_shell.dart';
 import 'ui/theme.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  final services = await AppServices.create();
+  final services = await AppServices.create(args: args);
   runApp(UniversalPrintApp(services: services));
 }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../app_services.dart';
@@ -189,7 +190,9 @@ class DashboardScreen extends StatelessWidget {
 
 /// Horizontal strip of the vendor's products or services, with placeholder
 /// cards while the first answer loads. Hidden when there is nothing to show.
-class _OrgSection extends StatelessWidget {
+/// Can be dragged with a finger, mouse or trackpad (desktop too), and a mouse
+/// wheel scrolls it sideways.
+class _OrgSection extends StatefulWidget {
   const _OrgSection({required this.title, required this.icon, required this.items, required this.loading});
 
   final String title;
@@ -197,30 +200,70 @@ class _OrgSection extends StatelessWidget {
   final List<OrgItem> items;
   final bool loading;
 
+  @override
+  State<_OrgSection> createState() => _OrgSectionState();
+}
+
+class _OrgSectionState extends State<_OrgSection> {
   static const _cardWidth = 168.0;
+
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  // A vertical wheel would otherwise do nothing on a horizontal list.
+  void _onWheel(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_controller.hasClients) return;
+    final delta = event.scrollDelta.dx != 0 ? event.scrollDelta.dx : event.scrollDelta.dy;
+    final position = _controller.position;
+    final target = (position.pixels + delta).clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (target != position.pixels) {
+      GestureBinding.instance.pointerSignalResolver.register(event, (_) => _controller.jumpTo(target));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty && !loading) return const SizedBox.shrink();
+    final items = widget.items;
+    if (items.isEmpty && !widget.loading) return const SizedBox.shrink();
     void openAll() => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => OrgItemsScreen(title: title, items: items, icon: icon),
+          builder: (_) => OrgItemsScreen(title: widget.title, items: items, icon: widget.icon),
         ));
     return Padding(
       padding: const EdgeInsets.only(top: 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         SectionHeader(
-          title,
+          widget.title,
           trailing: items.isEmpty ? null : TextButton(onPressed: openAll, child: const Text('View all')),
         ),
         SizedBox(
-          height: 196,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: items.isEmpty ? 3 : items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, i) => SizedBox(
-              width: _cardWidth,
-              child: items.isEmpty ? const _SkeletonCard() : _OrgCard(item: items[i], icon: icon),
+          height: 208,
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: PointerDeviceKind.values.toSet(),
+              scrollbars: false,
+            ),
+            child: Listener(
+              onPointerSignal: _onWheel,
+              child: Scrollbar(
+                controller: _controller,
+                thumbVisibility: items.isNotEmpty,
+                child: ListView.separated(
+                  controller: _controller,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: items.isEmpty ? 3 : items.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, i) => SizedBox(
+                    width: _cardWidth,
+                    child: items.isEmpty ? const _SkeletonCard() : _OrgCard(item: items[i], icon: widget.icon),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

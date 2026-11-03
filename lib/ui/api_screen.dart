@@ -28,6 +28,10 @@ $auth  -H "Content-Type: application/json" \\
        "content":{"store_name":"My Shop","invoice_no":"INV-1001",
        "items":[{"name":"Product A","qty":2,"price":100}],
        "total":200}}\'''';
+          final drawerExample = '''# Open the cash drawer without printing
+curl -X POST $base/api/drawer \\
+$auth  -H "Content-Type: application/json" \\
+  -d '{"route":"invoice","reference":"INV-1001-DRAWER"}\'''';
           final clientIds = s.clients.clientIdsWithRoutes;
           final scheme = Theme.of(context).colorScheme;
           return PageListView(
@@ -140,7 +144,7 @@ $auth  -H "Content-Type: application/json" \\
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.copy_rounded, size: 18),
                   onPressed: () {
-                    Clipboard.setData(ClipboardData(text: example));
+                    Clipboard.setData(ClipboardData(text: '$example\n\n$drawerExample'));
                     showMessage(context, 'Example copied');
                   },
                 ),
@@ -152,7 +156,7 @@ $auth  -H "Content-Type: application/json" \\
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: SelectableText(
-                  example,
+                  '$example\n\n$drawerExample',
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Color(0xFFE2E8F0), height: 1.5),
                 ),
               ),

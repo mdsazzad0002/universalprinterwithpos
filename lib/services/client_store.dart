@@ -7,11 +7,22 @@ import 'printer_store.dart';
 
 /// Route declared by software in a sync call.
 class RouteInput {
-  const RouteInput({required this.key, required this.name, this.printerId, this.paperWidth, this.copies});
+  const RouteInput({
+    required this.key,
+    required this.name,
+    this.printerId,
+    this.clearPrinter = false,
+    this.paperWidth,
+    this.copies,
+  });
 
   final String key;
   final String name;
   final String? printerId;
+
+  /// `"printer_id": null` (or `""`) was sent explicitly: unassign the route so
+  /// it prints on the default printer. Leaving the field out keeps the choice.
+  final bool clearPrinter;
   final int? paperWidth;
   final int? copies;
 
@@ -24,10 +35,12 @@ class RouteInput {
     if (key is! String || !_keyPattern.hasMatch(key)) {
       throw FormatException('routes[$index].key must be lowercase letters, digits, "_", "-" or "." (max 50)');
     }
+    final rawPrinter = json['printer_id']?.toString().trim();
     return RouteInput(
       key: key,
       name: (json['name'] as Object? ?? key).toString(),
-      printerId: json['printer_id']?.toString(),
+      printerId: rawPrinter == null || rawPrinter.isEmpty ? null : rawPrinter,
+      clearPrinter: json.containsKey('printer_id') && (rawPrinter == null || rawPrinter.isEmpty),
       paperWidth: parsePaperWidth(json['paper_width_mm'], 'routes[$index].paper_width_mm'),
       copies: switch (json['copies']) {
         null => null,
@@ -136,7 +149,7 @@ class ClientStore extends ChangeNotifier {
   Future<void> touch(String id) => _clients.touch(id);
 
   /// Upserts declared routes. Existing printer assignments are kept unless the
-  /// software sends a `printer_id`. With [prune] routes not in the list are
+  /// software sends a `printer_id` (`null` / `""` unassigns). With [prune] routes not in the list are
   /// removed.
   Future<List<PrintRoute>> sync(String clientId, List<RouteInput> inputs, {bool prune = false}) async {
     for (final input in inputs) {
@@ -150,7 +163,7 @@ class ClientStore extends ChangeNotifier {
         clientId: clientId,
         key: input.key,
         name: input.name,
-        printerId: input.printerId ?? current?.printerId,
+        printerId: input.clearPrinter ? null : (input.printerId ?? current?.printerId),
         paperWidth: input.paperWidth ?? current?.paperWidth,
         copies: input.copies ?? current?.copies ?? 1,
         updatedAt: DateTime.now(),

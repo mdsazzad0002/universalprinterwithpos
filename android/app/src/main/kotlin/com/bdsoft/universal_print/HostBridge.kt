@@ -34,8 +34,8 @@ class HostBridge(
     private val channel = MethodChannel(messenger, CHANNEL).also { it.setMethodCallHandler(this) }
     private var pendingPermission: MethodChannel.Result? = null
 
-    /** Intents that arrived before Dart finished starting. */
-    private val queued = ArrayList<Pair<Map<String, Any?>, (Map<*, *>) -> Unit>>()
+    /** Calls to Dart that arrived before it finished starting. */
+    private val queued = ArrayList<Pair<() -> Unit, () -> Unit>>()
     private var dartReady = false
 
     /** Latest status line from Dart, shown in the service notification. */
@@ -46,7 +46,7 @@ class HostBridge(
         when (call.method) {
             "ready" -> {
                 dartReady = true
-                queued.toList().forEach { (args, done) -> forward(args, done) }
+                queued.toList().forEach { (run, _) -> run() }
                 queued.clear()
                 result.success(null)
             }
@@ -77,6 +77,11 @@ class HostBridge(
                 requestIgnoreBattery()
                 result.success(null)
             }
+            "openPrintSettings" -> {
+                val intent = Intent(Settings.ACTION_PRINT_SETTINGS)
+                activity?.startActivity(intent) ?: context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                result.success(null)
+            }
             "hasNotificationPermission" -> result.success(hasNotificationPermission())
             "requestNotificationPermission" -> requestNotificationPermission(result)
             else -> result.notImplemented()
@@ -84,24 +89,29 @@ class HostBridge(
     }
 
     /** Sends a print request to Dart; [done] gets the API-style result map. */
-    fun submit(args: Map<String, Any?>, done: (Map<*, *>) -> Unit) {
-        if (dartReady) forward(args, done) else queued.add(args to done)
-    }
+    fun submit(args: Map<String, Any?>, done: (Map<*, *>) -> Unit) = request("submitIntent", args, done)
 
-    private fun forward(args: Map<String, Any?>, done: (Map<*, *>) -> Unit) {
-        channel.invokeMethod("submitIntent", args, object : MethodChannel.Result {
-            override fun success(result: Any?) {
-                done(result as? Map<*, *> ?: mapOf("success" to false, "error" to "No result"))
-            }
+    /**
+     * Calls [method] in Dart once it is ready; [done] always gets a map, with
+     * `success: false` and `error` when the call failed.
+     */
+    fun request(method: String, args: Any?, done: (Map<*, *>) -> Unit) {
+        val run = {
+            channel.invokeMethod(method, args, object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    done(result as? Map<*, *> ?: mapOf("success" to false, "error" to "No result"))
+                }
 
-            override fun error(code: String, message: String?, details: Any?) {
-                done(mapOf("success" to false, "error" to (message ?: code)))
-            }
+                override fun error(code: String, message: String?, details: Any?) {
+                    done(mapOf("success" to false, "error" to (message ?: code)))
+                }
 
-            override fun notImplemented() {
-                done(mapOf("success" to false, "error" to "App is not ready"))
-            }
-        })
+                override fun notImplemented() {
+                    done(mapOf("success" to false, "error" to "App is not ready"))
+                }
+            })
+        }
+        if (dartReady) run() else queued.add(run to { done(mapOf("success" to false, "error" to "App was closed")) })
     }
 
     fun onPermissionResult(requestCode: Int, grantResults: IntArray) {
@@ -112,7 +122,7 @@ class HostBridge(
 
     fun dispose() {
         channel.setMethodCallHandler(null)
-        queued.forEach { (_, done) -> done(mapOf("success" to false, "error" to "App was closed")) }
+        queued.forEach { (_, cancel) -> cancel() }
         queued.clear()
     }
 

@@ -28,7 +28,7 @@ bool FlutterWindow::OnCreate() {
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+    if (!start_hidden_) this->Show();
   });
 
   // Flutter can complete the first frame before the "show window" callback is
@@ -51,6 +51,13 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Closing the window only hides it: the print API, the system printer and
+  // the queue keep running. "Quit" in the app's menu really exits.
+  if (message == WM_CLOSE) {
+    ShowWindow(hwnd, SW_HIDE);
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

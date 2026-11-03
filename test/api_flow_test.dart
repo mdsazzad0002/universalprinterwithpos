@@ -307,4 +307,31 @@ void main() {
     final (_, routes) = await call('GET', '/api/routes', token: token);
     expect((routes['routes'] as List).single['assigned'], isFalse);
   });
+
+  test('software assigns, keeps and clears a route printer', () async {
+    final token = await pair();
+    Future<Map> route() async {
+      final (_, r) = await call('GET', '/api/routes', token: token);
+      return (r['routes'] as List).single as Map;
+    }
+
+    await call('PUT', '/api/routes', token: token, body: {
+      'routes': [{'key': 'barcode', 'name': 'Barcode label', 'printer_id': 'kitchen'}],
+    });
+    expect((await route())['printer_id'], 'kitchen');
+
+    // Field left out: the choice is kept.
+    await call('PUT', '/api/routes', token: token, body: {
+      'routes': [{'key': 'barcode', 'name': 'Barcode label'}],
+    });
+    expect((await route())['printer_id'], 'kitchen');
+
+    // Explicit null: back to the default printer.
+    final (s, synced) = await call('PUT', '/api/routes', token: token, body: {
+      'routes': [{'key': 'barcode', 'name': 'Barcode label', 'printer_id': null}],
+    });
+    expect(s, 200);
+    expect(synced['unassigned'], ['barcode']);
+    expect((await route())['assigned'], isFalse);
+  });
 }

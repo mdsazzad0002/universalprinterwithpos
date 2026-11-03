@@ -10,20 +10,49 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // The one window; opening the app again shows it instead of a new one.
+  GtkWindow* window;
+  // Started with --background (login): no window until opened.
+  gboolean start_hidden;
 };
+
+// Closing the window only hides it: the print API, the system printer and
+// the queue keep running. "Quit" in the app's menu really exits.
+static gboolean window_delete_cb(GtkWidget* window, GdkEvent* event,
+                                 gpointer user_data) {
+  gtk_widget_hide(window);
+  return TRUE;
+}
+
+static gboolean has_background_arg(gchar** arguments) {
+  for (gchar** a = arguments; a != nullptr && *a != nullptr; a++) {
+    if (g_strcmp0(*a, "--background") == 0) return TRUE;
+  }
+  return FALSE;
+}
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
+  if (self->start_hidden) return;
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  // Already running (launched again from the menu): show the window.
+  if (self->window != nullptr) {
+    self->start_hidden = FALSE;
+    gtk_window_present(self->window);
+    return;
+  }
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  self->window = window;
+  g_signal_connect(window, "delete-event", G_CALLBACK(window_delete_cb),
+                   nullptr);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -93,6 +122,7 @@ static gboolean my_application_local_command_line(GApplication* application,
   MyApplication* self = MY_APPLICATION(application);
   // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
+  self->start_hidden = has_background_arg(self->dart_entrypoint_arguments);
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {
@@ -101,6 +131,12 @@ static gboolean my_application_local_command_line(GApplication* application,
     return TRUE;
   }
 
+  // A second launch hands over to the running instance (single instance).
+  // The login entry (--background) leaves a running instance alone.
+  if (g_application_get_is_remote(application) && self->start_hidden) {
+    *exit_status = 0;
+    return TRUE;
+  }
   g_application_activate(application);
   *exit_status = 0;
 
@@ -141,7 +177,10 @@ static void my_application_class_init(MyApplicationClass* klass) {
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
 }
 
-static void my_application_init(MyApplication* self) {}
+static void my_application_init(MyApplication* self) {
+  self->window = nullptr;
+  self->start_hidden = FALSE;
+}
 
 MyApplication* my_application_new() {
   // Set the program name to the application ID, which helps various systems
@@ -152,5 +191,6 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     static_cast<GApplicationFlags>(0),
+                                     nullptr));
 }

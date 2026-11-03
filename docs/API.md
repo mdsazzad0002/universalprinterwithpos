@@ -193,7 +193,7 @@ every startup.
 |---|---|---|
 | `key` | ✓ | `a-z 0-9 _ - .`, max 50 chars. This is what you send when printing. |
 | `name` | | Label the user sees in the app. Defaults to `key`. |
-| `printer_id` | | Assigns the printer from your side. If you leave it out, the user's existing choice is **kept**. |
+| `printer_id` | | Assigns the printer from your side (an `id` from `GET /api/printers`). `null` or `""` removes the assignment, so the route prints on the default printer again. If you leave it out, the user's existing choice is **kept**. |
 | `paper_width_mm` | | Lays out this route's jobs for a narrower paper width. |
 | `copies` | | Default copies for this route (1–20). |
 | `prune` | | `true` removes routes that are not in this list. |
@@ -212,6 +212,19 @@ Response:
   ],
   "unassigned": ["kitchen"]
 }
+```
+
+**Choosing printers from your own software.** You don't have to send the user to the app.
+List the printers with `GET /api/printers`, show them in your settings screen, and save the
+choice per print type:
+
+```json
+PUT /api/routes
+{ "routes": [
+  { "key": "invoice", "name": "POS sale receipt", "printer_id": "PRN-m9x2k1-a7f3c2" },
+  { "key": "barcode", "name": "Barcode label",    "printer_id": "PRN-m9x7pq-11c0de" },
+  { "key": "report",  "name": "Reports",          "printer_id": null }
+] }
 ```
 
 If `unassigned` is not empty, tell the user: *"Open Universal Print → Connect →
@@ -405,6 +418,12 @@ The body is optional and picks the printer like a print job:
 
 Response `202` is a normal job (see [Job status](#job-status)). A label or A4
 printer is rejected with `422`.
+
+Without HTTP, on the same phone: the Intent action
+`com.bdsoft.universal_print.action.OPEN_DRAWER` (see [Android Intent](#android-intent-no-http)).
+
+The drawer is best left to your software: send `open_drawer: true` or `false` on every
+job, so the printer's own setting never decides.
 
 ---
 
@@ -746,6 +765,16 @@ launcher.launch(print)
 | `printer_id`, `route`, `reference` | String | Override / add to the payload |
 | `copies` | Int | Override / add to the payload |
 | `token` | String | Only when the user turned on *Require API token on this device* |
+
+Open the cash drawer without printing (same result extras, a normal job):
+
+```kotlin
+val drawer = Intent("com.bdsoft.universal_print.action.OPEN_DRAWER")
+    .setPackage("com.bdsoft.universal_print")
+    .putExtra("route", "invoice")                // optional: or "printer_id"; default printer otherwise
+    .putExtra("reference", "INV-1001-DRAWER")    // optional: never opens twice for the same reference
+launcher.launch(drawer)
+```
 
 Result extras are the same fields as the HTTP response (`success`, `job_id`,
 `status`, `printer_id`, `printer_name`, `duplicate`, …, or `error` and

@@ -33,8 +33,9 @@ class PrintForegroundService : Service() {
         var isRunning = false
             private set
 
+        /** On unless turned off: software must be able to print at any time. */
         fun isEnabled(context: Context) =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, true)
 
         fun setEnabled(context: Context, enabled: Boolean) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, enabled).apply()

@@ -32,6 +32,7 @@ Wi-Fi/LAN or USB. See `txt` for the full roadmap.
 | Android Intent integration (`action.PRINT`, Share → Universal Print) | ✅ see [docs/API.md](docs/API.md#android-intent-no-http) |
 | Zebra / ZPL label printers | ✅ same elements as TSPL, 203/300 dpi |
 | A4 / PDF (IPP, CUPS queues) | ✅ `document_type: "pdf"` to printers of type *A4 / PDF (IPP)* |
+| Software picks the printer per print type over the API (`GET /api/printers`, `PUT /api/routes` + `printer_id`) | ✅ nothing to set in the app |
 
 ## Project layout
 
@@ -42,13 +43,16 @@ lib/
   core/tspl/, zpl/    label printer renderers
   core/pdf/           test page for A4 printers
   data/               SQLite (sqflite) models and repositories
-  services/           printer store, clients & routes, print queue, local API server
+  core/ipp/, raster/  IPP server codec + HTTP, PWG / Apple raster decoder
+  services/           printer store, clients & routes, print queue, local API server,
+                      system_printer.dart (driverless IPP printer), os_printer_setup.dart
   ui/                 screens
 android/app/src/main/kotlin/.../BluetoothBridge.kt   Bluetooth SPP
 android/app/src/main/kotlin/.../UsbBridge.kt         USB OTG
 android/app/src/main/kotlin/.../PrintEngine.kt       shared Flutter engine (UI, service, intents)
 android/app/src/main/kotlin/.../PrintForegroundService.kt  background API
 android/app/src/main/kotlin/.../PrintIntentActivity.kt     print from other apps
+android/app/src/main/kotlin/.../UniversalPrintService.kt   Android system printer (print dialog)
 linux/                                                Linux desktop runner
 windows/                                              Windows desktop runner
 ```

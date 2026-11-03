@@ -13,18 +13,39 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     CreateAndAttachConsole();
   }
 
+  std::vector<std::string> command_line_arguments =
+      GetCommandLineArguments();
+  bool background = false;
+  for (const auto& arg : command_line_arguments) {
+    if (arg == "--background") background = true;
+  }
+
+  // Single instance: opening the app again shows the running one (which may
+  // be hidden in the background) instead of starting a second print server.
+  HANDLE instance_mutex =
+      ::CreateMutexW(nullptr, TRUE, L"Local\\UniversalPrintSingleInstance");
+  if (::GetLastError() == ERROR_ALREADY_EXISTS) {
+    HWND running =
+        ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"Universal Print");
+    if (running != nullptr && !background) {
+      ::ShowWindow(running, SW_SHOW);
+      if (::IsIconic(running)) ::ShowWindow(running, SW_RESTORE);
+      ::SetForegroundWindow(running);
+    }
+    if (instance_mutex != nullptr) ::CloseHandle(instance_mutex);
+    return EXIT_SUCCESS;
+  }
+
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
 
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
-
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
+  window.SetStartHidden(background);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
   if (!window.Create(L"Universal Print", origin, size)) {
@@ -39,5 +60,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   ::CoUninitialize();
+  if (instance_mutex != nullptr) ::CloseHandle(instance_mutex);
   return EXIT_SUCCESS;
 }

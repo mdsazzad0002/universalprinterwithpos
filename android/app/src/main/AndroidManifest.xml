@@ -55,6 +55,10 @@
                 <action android:name="com.bdsoft.universal_print.action.PRINT"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.bdsoft.universal_print.action.OPEN_DRAWER"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
             <intent-filter android:label="Print">
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -67,6 +71,19 @@
             android:name=".PrintForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
+        <!-- Android print framework: every printer added in the app appears in the
+             Print dialog of every app (Settings → Printing → Universal Print). -->
+        <service
+            android:name=".UniversalPrintService"
+            android:exported="true"
+            android:permission="android.permission.BIND_PRINT_SERVICE">
+            <intent-filter>
+                <action android:name="android.printservice.PrintService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.printservice"
+                android:resource="@xml/print_service"/>
+        </service>
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
