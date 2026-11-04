@@ -138,36 +138,6 @@ class DashboardScreen extends StatelessWidget {
                   ],
                 ]),
               ],
-              const SizedBox(height: 24),
-              SectionHeader(
-                'Recent jobs',
-                trailing: jobs.isEmpty
-                    ? null
-                    : TextButton(onPressed: () => onOpenTab(2), child: const Text('View all')),
-              ),
-              Card(
-                child: jobs.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: EmptyState(
-                          icon: Icons.receipt_long_outlined,
-                          title: 'No print jobs yet',
-                          message: 'Jobs sent by your software appear here.',
-                        ),
-                      )
-                    : Column(children: [
-                        for (final (i, job) in jobs.take(5).indexed) ...[
-                          if (i > 0) const Divider(indent: 16, endIndent: 16),
-                          ListTile(
-                            leading: IconBadge(Icons.description_outlined, size: 36, color: theme.colorScheme.secondary),
-                            title: Text('${job.documentType} → ${job.printerName}', overflow: TextOverflow.ellipsis),
-                            subtitle: Text(formatTime(job.createdAt)),
-                            trailing: JobStatusChip(job.status),
-                            onTap: () => onOpenTab(2),
-                          ),
-                        ],
-                      ]),
-              ),
               _OrgSection(
                 title: 'Products',
                 icon: Icons.inventory_2_outlined,
