@@ -181,9 +181,34 @@ sudo systemctl enable --now bluetooth
 Windows builds must be made **on a Windows PC** (Flutter cannot cross-compile
 from Linux). Install:
 
-- Flutter 3.47+ for Windows
-- Visual Studio 2022 (not VS Code) with the **Desktop development with C++**
-  workload
+1. **Flutter 3.47+**, e.g. into `D:\flutter`, and add `D:\flutter\bin` to the
+   user `PATH`:
+
+   ```powershell
+   git clone --depth 1 -b 3.47.8 https://github.com/flutter/flutter.git D:\flutter
+   ```
+
+   Open a **new** terminal afterwards. A terminal that was already open does
+   not see the new `PATH` (`flutter: command not found`).
+
+2. **Visual Studio 2022 Build Tools** with the C++ workload (the full Visual
+   Studio with *Desktop development with C++* also works; VS Code does not):
+
+   ```powershell
+   winget install -e --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+   ```
+
+3. **Developer Mode** on: *Settings → Privacy & security → For developers →
+   Developer Mode* (or `start ms-settings:developers`). Without it the build
+   fails with *"Building with plugins requires symlink support"*.
+
+4. **Inno Setup 6**, only needed to build the installer:
+
+   ```powershell
+   winget install -e --id JRSoftware.InnoSetup
+   ```
+
+Then check:
 
 ```powershell
 flutter config --enable-windows-desktop
@@ -195,20 +220,69 @@ flutter doctor            # "Visual Studio" must show a green tick
 ```powershell
 flutter run -d windows                # debug, hot reload
 
+flutter pub get
 flutter build windows --release
 # → build\windows\x64\runner\Release\universal_print.exe
 ```
 
-To install on another PC, copy the **whole `Release\` folder** (the `.exe`
-needs the `.dll` files and the `data\` folder next to it), e.g. zip it:
+The `.exe` alone does not run: it needs the `.dll` files and the `data\`
+folder next to it. The Visual C++ runtime DLLs (`msvcp140.dll`,
+`vcruntime140*.dll`) are copied into `Release\` by `windows/CMakeLists.txt`,
+so the target PC does **not** need the VC++ Redistributable.
+
+### Installer (setup.exe)
+
+After `flutter build windows --release`:
+
+**Git Bash** (VS Code's default terminal here):
+
+```bash
+"$LOCALAPPDATA/Programs/Inno Setup 6/ISCC.exe" //DAppVersion=1.0.0 windows/installer/universal_print.iss
+```
+
+**PowerShell**:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.0.0 windows\installer\universal_print.iss
+```
+
+**cmd**:
+
+```bat
+"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.0.0 windows\installer\universal_print.iss
+```
+
+Output: `build\installer\universal_print-setup-1.0.0-x64.exe`. In Git Bash the
+option is written `//DAppVersion` (a single `/` is turned into a path). If Inno
+Setup was installed for all users, the path is
+`C:\Program Files (x86)\Inno Setup 6\ISCC.exe`.
+
+The installer ([windows/installer/universal_print.iss](windows/installer/universal_print.iss)):
+
+- installs per user without admin rights (admins can choose *all users*),
+- adds a Start menu shortcut, an optional desktop icon, and starts the app,
+- on uninstall stops the background app and removes its *start at login*
+  entry. Data in `%APPDATA%\universal_print` is kept.
+
+It is not code-signed, so Windows SmartScreen may show *"Windows protected your
+PC"*. Click *More info → Run anyway*.
+
+### Portable zip (no installer)
 
 ```powershell
 Compress-Archive build\windows\x64\runner\Release\* universal_print-windows-x64.zip
 ```
 
-The target PC may need the
-[Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
-if the app does not start.
+Unzip anywhere on the target PC and run `universal_print.exe`.
+
+### Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `flutter: command not found` | Open a new terminal after adding Flutter to `PATH`. |
+| *Building with plugins requires symlink support* | Turn on Developer Mode (see above). |
+| *Unable to find suitable Visual Studio toolchain* | Install the VS 2022 Build Tools C++ workload; check `flutter doctor`. |
+| App installs but does not open on another PC | Rebuild with the current `windows/CMakeLists.txt` (bundles the VC++ DLLs). The target must be 64-bit Windows 10/11. |
 
 ### Printers on Windows
 
